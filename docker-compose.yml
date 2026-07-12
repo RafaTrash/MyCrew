@@ -1,0 +1,220 @@
+services:
+  # ===== PRIORIDADES - ESSENCIAL PARA MYCREW =====
+  
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mycrew-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11435}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ai_net
+    gpus: all
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: mycrew-open-webui
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "${OPEN_WEBUI_PORT:-3001}:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=True
+      - VECTOR_DB=qdrant
+      - QDRANT_URI=http://qdrant:6333
+      - QDRANT_COLLECTION_PREFIX=mycrew
+    volumes:
+      - open_webui_data:/app/backend/data
+    networks:
+      - ai_net
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    container_name: mycrew-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - ai_net
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: mycrew-n8n
+    restart: unless-stopped
+    depends_on:
+      - open-webui
+      - qdrant
+      - ollama
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - GENERIC_TIMEZONE=${TZ:-America/Sao_Paulo}
+      - TZ=${TZ:-America/Sao_Paulo}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_EDITOR_BASE_URL=http://localhost:${N8N_PORT:-5678}
+      - WEBHOOK_URL=http://localhost:${N8N_PORT:-5678}/
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-trocar_essa_senha}
+      - OPENWEBUI_BASE_URL=http://open-webui:8080
+      - OPENWEBUI_API_BASE=http://open-webui:8080/api
+      - OPENWEBUI_API_KEY=${OPEN_WEBUI_API_KEY}
+      - OPENWEBUI_AGENT_PREFIX=${OPENWEBUI_AGENT_PREFIX:-custom-}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION_PREFIX=mycrew
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - ai_net
+
+  # ===== FERRAMENTAS ÚTEIS =====
+  
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: mycrew-dozzle
+    restart: unless-stopped
+    ports:
+      - "${DOZZLE_PORT:-8085}:8080"
+    environment:
+      - DOZZLE_BASE=/dozzle
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ai_net
+
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: mycrew-portainer
+    restart: unless-stopped
+    ports:
+      - "${PORTAINER_PORT:-9000}:9000"
+      - "${PORTAINER_SSL_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - ai_net
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: mycrew-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "${KUMA_PORT:-3002}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - ai_net
+
+  aider:
+    image: paulgauthier/aider-full:latest
+    container_name: mycrew-aider
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "${AIDER_PORT:-8501}:8501"
+    environment:
+      - OLLAMA_API_BASE=http://ollama:11434
+      - OLLAMA_CONTEXT_LENGTH=${AIDER_NUM_CTX:-8192}
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - GIT_CONFIG_GLOBAL=/tmp/.gitconfig
+    entrypoint: ["aider"]
+    command:
+      - "--model"
+      - "ollama_chat/${AIDER_MODEL:-qwen2.5-coder:7b}"
+      - "--gui"
+      - "--no-analytics"
+      - "--no-auto-commits"
+      - "--yes-always"
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+    networks:
+      - ai_net
+  python-webapp:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: python-webapp
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - qdrant
+      - n8n
+    ports:
+      - "${MYCREW_BACKEND_PORT:-8082}:80"
+    environment:
+      - OPEN_WEBUI_URL=http://open-webui:8080
+      - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY}
+      - OPEN_WEBUI_TOKEN=${OPEN_WEBUI_TOKEN}
+      - N8N_URL=http://n8n:5678
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_REQUEST_TIMEOUT=${OLLAMA_REQUEST_TIMEOUT:-240}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-512}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - AGENTS_DIR=/app/agents
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-mycrew_agent_kb}
+      - QDRANT_TOP_K=${QDRANT_TOP_K:-4}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - N8N_CHAT_FLOW_WEBHOOK=${N8N_CHAT_FLOW_WEBHOOK:-}
+      - N8N_KNOWLEDGE_FLOW_WEBHOOK=${N8N_KNOWLEDGE_FLOW_WEBHOOK:-}
+      - PUBLIC_QDRANT_DASHBOARD=${PUBLIC_QDRANT_DASHBOARD:-http://localhost:${QDRANT_PORT:-6333}/dashboard}
+      - PUBLIC_DOZZLE=${PUBLIC_DOZZLE:-http://localhost:${DOZZLE_PORT:-8085}/dozzle}
+      - PUBLIC_PORTAINER=${PUBLIC_PORTAINER:-http://localhost:${PORTAINER_PORT:-9000}}
+      - PUBLIC_UPTIME_KUMA=${PUBLIC_UPTIME_KUMA:-http://localhost:${KUMA_PORT:-3002}}
+      - PUBLIC_AIDER=${PUBLIC_AIDER:-http://localhost:${AIDER_PORT:-8501}}
+    volumes:
+      - ./agents:/app/agents
+    networks:
+      - ai_net
+
+  mycrew-frontend:
+    image: nginx:1.27-alpine
+    container_name: mycrew-frontend
+    restart: unless-stopped
+    depends_on:
+      - python-webapp
+    ports:
+      - "${MYCREW_FRONTEND_PORT:-8081}:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - ai_net
+
+volumes:
+  ollama_data:
+    name: mycrew_ollama_data
+    external: true
+  open_webui_data:
+    name: mycrew_open_webui_data
+    external: true
+  qdrant_data:
+    name: mycrew_qdrant_data
+    external: true
+  n8n_data:
+    name: mycrew_n8n_data
+  portainer_data:
+    name: mycrew_portainer_data
+    external: true
+  uptime_kuma_data:
+    name: mycrew_uptime_kuma_data
+    external: true
+
+networks:
+  ai_net:
+    driver: bridge

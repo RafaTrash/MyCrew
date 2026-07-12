@@ -1,0 +1,264 @@
+{
+  "name": "MyCrew - Inventario OpenWebUI + Qdrant",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual_trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "openwebuiBaseUrl",
+              "value": "http://open-webui:8080"
+            },
+            {
+              "name": "openwebuiApiKey",
+              "value": "COLE_AQUI_SUA_OPENWEBUI_API_KEY"
+            },
+            {
+              "name": "openwebuiToken",
+              "value": ""
+            },
+            {
+              "name": "qdrantUrl",
+              "value": "http://qdrant:6333"
+            },
+            {
+              "name": "agentPrefix",
+              "value": ""
+            }
+          ]
+        }
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ String($json.openwebuiBaseUrl || '').trim().replace(/\\/$/, '') + '/api/v1/models/list' }}",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + (String($json.openwebuiApiKey || '').trim() || String($json.openwebuiToken || '').trim()) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get_models",
+      "name": "OpenWebUI - Listar Modelos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').first().json;\nconst apiKey = String(cfg.openwebuiApiKey || '').trim();\nconst jwtToken = String(cfg.openwebuiToken || '').trim();\nconst authToken = apiKey || jwtToken;\n\nif (!authToken || authToken.includes('COLE_AQUI')) {\n  throw new Error('Defina openwebuiApiKey ou openwebuiToken (JWT) no node Config.');\n}\n\nconst payload = $json || {};\nconst detail = String(payload.detail || '').toLowerCase();\nif (detail.includes('unauthorized') || detail.includes('not authenticated')) {\n  throw new Error('Open WebUI retornou 401 Unauthorized. Atualize a API key ou o token JWT no node Config.');\n}\n\nconst rawModels = Array.isArray(payload)\n  ? payload\n  : (payload.data || payload.models || payload.items || payload.results || []);\n\nif (!Array.isArray(rawModels)) {\n  throw new Error('Resposta inesperada da API de modelos do Open WebUI.');\n}\n\nconst normalized = rawModels.map((m) => ({\n  id: m.id ?? m.model ?? m.name ?? '',\n  name: m.name ?? m.id ?? m.model ?? '',\n  owner: m.owned_by ?? m.source ?? '',\n  raw: m\n}));\n\nconst prefix = String(cfg.agentPrefix || '').trim();\nlet agents = [];\n\nif (!prefix) {\n  agents = normalized;\n} else {\n  agents = normalized.filter((m) =>\n    String(m.id).startsWith(prefix) || String(m.name).startsWith(prefix)\n  );\n\n  if (agents.length === 0 && normalized.length > 0) {\n    agents = normalized;\n  }\n}\n\nreturn [{\n  json: {\n    openwebuiBaseUrl: cfg.openwebuiBaseUrl,\n    openwebuiApiKey: apiKey,\n    openwebuiToken: jwtToken,\n    qdrantUrl: cfg.qdrantUrl,\n    agentPrefix: cfg.agentPrefix ?? '',\n    modelsCount: normalized.length,\n    agentsCount: agents.length,\n    models: normalized,\n    agents,\n    agentPrefixUsed: prefix || '(vazio)'\n  }\n}];"
+      },
+      "id": "normalize_models",
+      "name": "Normalizar Modelos/Agentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ String($json.openwebuiBaseUrl || '').trim().replace(/\\/$/, '') + '/api/v1/chats/list' }}",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + (String($json.openwebuiApiKey || '').trim() || String($json.openwebuiToken || '').trim()) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get_chats",
+      "name": "OpenWebUI - Listar Chats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "alwaysOutputData": true,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Normalizar Modelos/Agentes').first().json;\nconst payload = $json;\nconst rawChats = Array.isArray(payload)\n  ? payload\n  : (payload.data || payload.items || payload.results || []);\n\nconst chats = rawChats.map((c) => ({\n  id: c.id ?? c.chat_id ?? '',\n  title: c.title ?? c.name ?? '(sem titulo)',\n  updatedAt: c.updated_at ?? c.updatedAt ?? null,\n  model: c.model ?? c.model_id ?? null\n}));\n\nreturn [{\n  json: {\n    openwebuiBaseUrl: cfg.openwebuiBaseUrl,\n    openwebuiApiKey: cfg.openwebuiApiKey,\n    openwebuiToken: cfg.openwebuiToken,\n    qdrantUrl: cfg.qdrantUrl,\n    agentPrefix: cfg.agentPrefix ?? '',\n    chatsCount: chats.length,\n    chats\n  }\n}];"
+      },
+      "id": "normalize_chats",
+      "name": "Normalizar Chats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ String($json.qdrantUrl || '').trim().replace(/\\/$/, '') + '/collections' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "get_qdrant",
+      "name": "Qdrant - Listar Collections",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const modelsData = $('Normalizar Modelos/Agentes').first().json;\nconst chatsData = $('Normalizar Chats').first().json;\n\nconst payload = $json || {};\nconst collections = payload?.result?.collections || payload?.collections || [];\nconst qdrantCollections = collections.map((c) => c.name || c.collection_name || JSON.stringify(c));\n\nreturn [{\n  json: {\n    resumo: {\n      totalModelos: modelsData.modelsCount,\n      totalAgentesPorPrefixo: modelsData.agentsCount,\n      totalChats: chatsData.chatsCount,\n      totalColecoesQdrant: qdrantCollections.length\n    },\n    agentes: modelsData.agents,\n    modelos: modelsData.models,\n    chats: chatsData.chats,\n    qdrantCollections\n  }\n}];"
+      },
+      "id": "build_summary",
+      "name": "Resumo Inventario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "OpenWebUI - Listar Modelos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenWebUI - Listar Modelos": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Modelos/Agentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Modelos/Agentes": {
+      "main": [
+        [
+          {
+            "node": "OpenWebUI - Listar Chats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenWebUI - Listar Chats": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Chats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Chats": {
+      "main": [
+        [
+          {
+            "node": "Qdrant - Listar Collections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant - Listar Collections": {
+      "main": [
+        [
+          {
+            "node": "Resumo Inventario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "mycrew-openwebui-qdrant-v1"
+}
