@@ -1,19 +1,31 @@
 # MyCrew AI Local Stack
 
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat-square&logo=nginx&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Open WebUI](https://img.shields.io/badge/Open%20WebUI-1a1a1a?style=flat-square)
+![Ollama](https://img.shields.io/badge/Ollama-000000?style=flat-square&logo=ollama&logoColor=white)
+![Qdrant](https://img.shields.io/badge/Qdrant-DC244C?style=flat-square&logo=qdrant&logoColor=white)
+![n8n](https://img.shields.io/badge/n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white)
+![Dozzle](https://img.shields.io/badge/Dozzle-1E88E5?style=flat-square)
+![Portainer](https://img.shields.io/badge/Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white)
+![Uptime Kuma](https://img.shields.io/badge/Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white)
+![Aider](https://img.shields.io/badge/Aider-D97757?style=flat-square)
+
 Arquitetura atual: frontend e backend separados.
 
 ## Componentes
 
-- `mycrew-frontend` (Nginx): interface web para chat, anexar conhecimento e acionar fluxos.
-- `python-webapp` (FastAPI): API principal de chat, personas, knowledge e execucao de fluxos n8n.
-- `open-webui`: gestao de modelos/agentes.
-- `ollama`: inferencia local e embeddings.
-- `qdrant`: memoria vetorial para retroalimentacao.
-- `n8n`: orquestracao de fluxos de conversa e conhecimento.
-- `dozzle`: visualizacao de logs dos containers do stack em tempo real.
-- `portainer`: gestao e monitoramento dos containers/volumes/redes Docker.
-- `uptime-kuma`: monitoramento de disponibilidade (uptime) dos servicos do stack.
-- `aider` (Dev Agent): agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
+- ![Nginx](https://img.shields.io/badge/-Nginx-009639?style=flat-square&logo=nginx&logoColor=white) `mycrew-frontend`: interface web para chat, anexar conhecimento e acionar fluxos.
+- ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) `python-webapp`: API principal de chat, personas, knowledge e execucao de fluxos n8n.
+- ![Open WebUI](https://img.shields.io/badge/-Open%20WebUI-1a1a1a?style=flat-square) `open-webui`: gestao de modelos/agentes.
+- ![Ollama](https://img.shields.io/badge/-Ollama-000000?style=flat-square&logo=ollama&logoColor=white) `ollama`: inferencia local e embeddings.
+- ![Qdrant](https://img.shields.io/badge/-Qdrant-DC244C?style=flat-square&logo=qdrant&logoColor=white) `qdrant`: memoria vetorial para retroalimentacao.
+- ![n8n](https://img.shields.io/badge/-n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white) `n8n`: orquestracao de fluxos de conversa e conhecimento.
+- ![Dozzle](https://img.shields.io/badge/-Dozzle-1E88E5?style=flat-square) `dozzle`: visualizacao de logs dos containers do stack em tempo real.
+- ![Portainer](https://img.shields.io/badge/-Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white) `portainer`: gestao e monitoramento dos containers/volumes/redes Docker.
+- ![Uptime Kuma](https://img.shields.io/badge/-Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white) `uptime-kuma`: monitoramento de disponibilidade (uptime) dos servicos do stack.
+- ![Aider](https://img.shields.io/badge/-Aider-D97757?style=flat-square) `aider` (Dev Agent): agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
 
 ## Subir ambiente
 
@@ -86,6 +98,6 @@ Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho
 
 ## Compatibilidade com workflows existentes
 
-Os fluxos em `automation/n8n/workflows/` continuam validos.
+Os fluxos em `automation/n8n/workflows/` continuam validos, principalmente para `clovis`.
 
 Se um node no n8n apontar para `http://python-webapp:80`, permanece compativel.
