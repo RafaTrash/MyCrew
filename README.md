@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.png" alt="MyCrew AI Local Stack" width="280">
+</p>
+
 # MyCrew AI Local Stack
 
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
@@ -11,6 +15,10 @@
 ![Portainer](https://img.shields.io/badge/Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white)
 ![Uptime Kuma](https://img.shields.io/badge/Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white)
 ![Aider](https://img.shields.io/badge/Aider-D97757?style=flat-square)
+
+**Responsavel pelo projeto:** Rafael Rodrigues
+[![GitHub Badge](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/RafaTrash)
+[![LinkedIn Badge](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/rafaelrrodrigues/)
 
 Arquitetura atual: frontend e backend separados.
 
@@ -46,6 +54,72 @@ docker volume create mycrew_uptime_kuma_data
 ```bash
 docker compose up -d --build
 ```
+
+## Guia de introducao
+
+### 1. Baixar modelos no Ollama
+
+O container do Ollama sobe vazio — os modelos precisam ser baixados manualmente via `docker exec`:
+
+```bash
+# Modelo de chat principal (exemplo)
+docker exec -it mycrew-ollama ollama pull llama3.1:8b
+
+# Modelo de codigo, usado pelo Aider (Dev Agent)
+docker exec -it mycrew-ollama ollama pull qwen2.5-coder:7b
+
+# Modelo de embeddings, usado na retroalimentacao (Qdrant)
+docker exec -it mycrew-ollama ollama pull nomic-embed-text
+```
+
+Confirme o que ja foi baixado:
+
+```bash
+docker exec -it mycrew-ollama ollama list
+```
+
+> Troque `llama3.1:8b` por qualquer modelo do [catalogo do Ollama](https://ollama.com/library) compativel com sua GPU/VRAM.
+
+### 2. Acessar o Open WebUI e criar a conta admin
+
+1. Acesse `http://localhost:3001`.
+2. **O primeiro cadastro feito vira automaticamente a conta de administrador** — preencha nome, e-mail e senha na tela de registro.
+3. Apos logar, confirme em **Settings > Admin Settings > Connections** que o Ollama esta conectado (`http://ollama:11434`, ja vem configurado via `OLLAMA_BASE_URL` no compose).
+
+### 3. Criar o espaco de trabalho (Workspace)
+
+1. No menu lateral, abra **Workspace**.
+2. As abas **Models**, **Knowledge**, **Prompts** e **Tools** organizam o que o(s) agente(s) vao usar. Para o MyCrew, o mais importante e a aba **Knowledge** (bases usadas na retroalimentacao via Qdrant) e **Models** (onde os agentes sao definidos).
+
+### 4. Cadastrar um novo modelo/agente
+
+1. Em **Workspace > Models**, clique em **+ Create a Model** (ou **New Model**).
+2. Escolha o **modelo base** ja baixado no Ollama (ex: `llama3.1:8b`).
+3. De um nome ao agente (ex: `clovis`) e defina o **System Prompt** — e aqui que entra a personalidade/instrucoes do agente.
+4. Salve. O agente cadastrado passa a aparecer tanto no seletor de modelos do Open WebUI quanto no endpoint `GET /api/personas` do backend (que lista agentes locais + agentes do OpenWebUI).
+
+### 5. Coletar as API keys para o stack funcionar
+
+O backend (`python-webapp`) precisa de uma chave/token do Open WebUI para autenticar as chamadas (`OPEN_WEBUI_API_KEY` / `OPEN_WEBUI_TOKEN` no `.env`):
+
+1. No Open WebUI, clique no seu avatar (canto superior direito) > **Settings**.
+2. Va em **Account** > secao **API Keys**.
+3. Clique em **Create new secret key**, copie o valor gerado (ele nao e mostrado novamente).
+4. Cole no `.env` do projeto:
+
+```bash
+OPEN_WEBUI_API_KEY=sk-...copiado-aqui...
+```
+
+5. Reinicie o backend para carregar a nova variavel:
+
+```bash
+docker compose restart python-webapp
+```
+
+> **n8n**: nao usa API key — a autenticacao e via Basic Auth (`N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD` no `.env`). Os webhooks de fluxo (`N8N_CHAT_FLOW_WEBHOOK`, `N8N_KNOWLEDGE_FLOW_WEBHOOK`) sao copiados de dentro de cada workflow no editor do n8n (node "Webhook" > campo "Production URL").
+>
+> **Qdrant**: nesta configuracao local nao exige API key por padrao. Se ativar autenticacao (`QDRANT__SERVICE__API_KEY` na imagem oficial), adicione a chave correspondente no `.env` e nas variaveis dos servicos que o consomem (`open-webui`, `python-webapp`).
 
 ## URLs
 
@@ -143,3 +217,7 @@ Se um node no n8n apontar para `http://python-webapp:80`, permanece compativel.
 Codigo proprio (`backend/`, `frontend/`, `agents/`, workflows) sob **MIT** — veja [`LICENSE`](./LICENSE).
 
 As imagens de terceiros orquestradas pelo `docker-compose.yml` (n8n, Qdrant, Ollama, Aider etc.) mantem suas proprias licencas — veja [`NOTICE.md`](./NOTICE.md) para detalhes e atencao especial ao n8n (fair-code, nao permissiva para uso comercial como SaaS de terceiros).
+
+## Manutencao
+
+Projeto mantido por **Rafael Rodrigues** ([@RafaTrash](https://github.com/RafaTrash)). Duvidas, sugestoes ou issues: abra uma issue no repositorio ou entre em contato via [LinkedIn](https://www.linkedin.com/in/rafaelrrodrigues/).
