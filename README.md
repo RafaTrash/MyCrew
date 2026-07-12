@@ -27,6 +27,20 @@ Arquitetura atual: frontend e backend separados.
 - ![Uptime Kuma](https://img.shields.io/badge/-Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white) `uptime-kuma`: monitoramento de disponibilidade (uptime) dos servicos do stack.
 - ![Aider](https://img.shields.io/badge/-Aider-D97757?style=flat-square) `aider` (Dev Agent): agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
 
+## Pre-requisitos
+
+- Docker + Docker Compose.
+- GPU NVIDIA com drivers/`nvidia-container-toolkit` instalados (o servico `ollama` usa `gpus: all`). Sem GPU, remova/ajuste essa diretiva no compose ou espere inferencia mais lenta em CPU.
+- **Volumes externos**: alguns volumes sao `external: true` e precisam existir antes do primeiro `up`, senao o Compose falha. Crie antes de subir:
+
+```bash
+docker volume create mycrew_ollama_data
+docker volume create mycrew_open_webui_data
+docker volume create mycrew_qdrant_data
+docker volume create mycrew_portainer_data
+docker volume create mycrew_uptime_kuma_data
+```
+
 ## Subir ambiente
 
 ```bash
@@ -42,7 +56,7 @@ docker compose up -d --build
 - Qdrant: `http://localhost:6333`
 - n8n: `http://localhost:5678`
 - Dozzle (logs): `http://localhost:8085/dozzle`
-- Portainer (gestao Docker): `http://localhost:9000`
+- Portainer (gestao Docker): `http://localhost:9000` (HTTP) ou `https://localhost:9443` (HTTPS)
 - Uptime Kuma (monitoramento): `http://localhost:3002`
 - Aider (Dev Agent): `http://localhost:8501`
 
@@ -77,11 +91,31 @@ A retroalimentacao funciona em dois caminhos:
 
 No `.env`, configure:
 
+**Integracao IA / conhecimento**
 - `OPEN_WEBUI_API_KEY` ou `OPEN_WEBUI_TOKEN`
-- `QDRANT_COLLECTION=mycrew_knowledge`
+- `QDRANT_COLLECTION=mycrew_agent_kb`
+- `QDRANT_TOP_K=4`
 - `EMBEDDING_MODEL=nomic-embed-text`
+- `OLLAMA_REQUEST_TIMEOUT=240`
+- `OLLAMA_NUM_PREDICT=512`
+- `OLLAMA_KEEP_ALIVE=30m`
+
+**Fluxos n8n**
 - `N8N_CHAT_FLOW_WEBHOOK=` URL de webhook para fluxo de conversa
 - `N8N_KNOWLEDGE_FLOW_WEBHOOK=` URL de webhook para fluxo de anexos/conhecimento
+- `N8N_BASIC_AUTH_USER=admin`
+- `N8N_BASIC_AUTH_PASSWORD=` **⚠️ trocar o valor padrao antes de expor o stack ou publicar o repo**
+
+**Aider (Dev Agent)**
+- `AIDER_MODEL=qwen2.5-coder:7b` (modelo usado via `ollama_chat/`)
+- `AIDER_NUM_CTX=16384` (tamanho de contexto)
+
+**Portas (todas com defaults no compose, sobrescreva se houver conflito)**
+- `MYCREW_FRONTEND_PORT` (8081), `MYCREW_BACKEND_PORT` (8082), `OPEN_WEBUI_PORT` (3001), `OLLAMA_PORT` (11435), `QDRANT_PORT` (6333), `N8N_PORT` (5678), `DOZZLE_PORT` (8085), `PORTAINER_PORT` (9000), `PORTAINER_SSL_PORT` (9443), `KUMA_PORT` (3002), `AIDER_PORT` (8501)
+
+**Outros**
+- `TZ=America/Sao_Paulo`
+- `PUBLIC_QDRANT_DASHBOARD`, `PUBLIC_DOZZLE`, `PUBLIC_PORTAINER`, `PUBLIC_UPTIME_KUMA`, `PUBLIC_AIDER`: URLs publicas expostas pelo backend (ja tem defaults calculados a partir das portas acima; sobrescreva se o stack rodar atras de um dominio/proxy reverso).
 
 Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho de fluxo n8n fica indisponivel.
 
@@ -93,7 +127,9 @@ Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho
 
 ## Dev Agent (Aider)
 
-- **Aider** (`http://localhost:8501`): agente de desenvolvimento assistido por IA, usado para gerar, editar e revisar codigo do proprio stack (backend, fluxos, integracoes) de forma conversacional.
+- **Aider** (`http://localhost:8501`): agente de desenvolvimento assistido por IA, usado para gerar, editar e revisar codigo do proprio stack de forma conversacional. Roda com o modelo local via Ollama (`AIDER_MODEL`, default `qwen2.5-coder:7b`).
+- **Escopo padrao**: o container ja inicia restrito a editar apenas `frontend/index.html` e `frontend/app.js` (definido no `command` do servico). Para liberar outros arquivos/pastas, edite a lista de argumentos do servico `aider` no `docker-compose.yml`.
+- Auto-commits estao desativados (`--no-auto-commits`) e as mudancas sao sempre aplicadas sem confirmacao manual (`--yes-always`) — revise o diff antes de commitar.
 - Recomenda-se restringir o acesso a essa porta ao ambiente local/dev, ja que o agente pode alterar arquivos do projeto.
 
 ## Compatibilidade com workflows existentes
@@ -101,3 +137,9 @@ Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho
 Os fluxos em `automation/n8n/workflows/` continuam validos, principalmente para `clovis`.
 
 Se um node no n8n apontar para `http://python-webapp:80`, permanece compativel.
+
+## Licenca
+
+Codigo proprio (`backend/`, `frontend/`, `agents/`, workflows) sob **MIT** — veja [`LICENSE`](./LICENSE).
+
+As imagens de terceiros orquestradas pelo `docker-compose.yml` (n8n, Qdrant, Ollama, Aider etc.) mantem suas proprias licencas — veja [`NOTICE.md`](./NOTICE.md) para detalhes e atencao especial ao n8n (fair-code, nao permissiva para uso comercial como SaaS de terceiros).
