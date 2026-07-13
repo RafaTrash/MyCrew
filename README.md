@@ -94,19 +94,24 @@
 # MyCrew AI Local Stack
 
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
-![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat-square&logo=nginx&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
-![Open WebUI](https://img.shields.io/badge/Open%20WebUI-1a1a1a?style=flat-square)
+
+### Core
 ![Ollama](https://img.shields.io/badge/Ollama-000000?style=flat-square&logo=ollama&logoColor=white)
+![Open WebUI](https://img.shields.io/badge/Open%20WebUI-1a1a1a?style=flat-square)
 ![Qdrant](https://img.shields.io/badge/Qdrant-DC244C?style=flat-square&logo=qdrant&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
 ![n8n](https://img.shields.io/badge/n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white)
+![LiteLLM](https://img.shields.io/badge/LiteLLM-4A90D9?style=flat-square)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat-square&logo=nginx&logoColor=white)
+
+### Tools
 ![Dozzle](https://img.shields.io/badge/Dozzle-1E88E5?style=flat-square)
 ![Portainer](https://img.shields.io/badge/Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white)
 ![Uptime Kuma](https://img.shields.io/badge/Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white)
 ![Aider](https://img.shields.io/badge/Aider-D97757?style=flat-square)
 ![Watchtower](https://img.shields.io/badge/Watchtower-326DE6?style=flat-square)
-![LiteLLM](https://img.shields.io/badge/LiteLLM-4A90D9?style=flat-square)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
 **Responsavel pelo projeto:** Rafael Rodrigues
 [![GitHub Badge](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/RafaTrash)
@@ -115,20 +120,34 @@
 Arquitetura atual: frontend e backend separados.
 
 ## Componentes
+## Componentes
 
+### Core — essenciais (profile `core`)
+
+Sobem com `docker compose --profile core up -d`. Sem eles o MyCrew nao funciona.
+
+- ![Ollama](https://img.shields.io/badge/-Ollama-000000?style=flat-square&logo=ollama&logoColor=white) `ollama`: inferencia local de modelos e geracao de embeddings.
+- ![Open WebUI](https://img.shields.io/badge/-Open%20WebUI-1a1a1a?style=flat-square) `open-webui`: gestao de modelos e agentes conectados ao Ollama.
+- ![Qdrant](https://img.shields.io/badge/-Qdrant-DC244C?style=flat-square&logo=qdrant&logoColor=white) `qdrant`: banco vetorial usado como memoria/knowledge base dos agentes.
+- ![Redis](https://img.shields.io/badge/-Redis-DC382D?style=flat-square&logo=redis&logoColor=white) `redis`: cache e fila em memoria para o stack.
+- ![n8n](https://img.shields.io/badge/-n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white) `n8n`: orquestracao dos fluxos de conversa e ingestao de conhecimento.
+- ![LiteLLM](https://img.shields.io/badge/-LiteLLM-4A90D9?style=flat-square) `litellm`: gateway de IA que roteia chamadas entre Ollama e provedores externos (OpenAI, OpenRouter, Gemini, Groq).
+- ![PostgreSQL](https://img.shields.io/badge/-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) `postgres`: banco relacional usado pelo LiteLLM (usuarios, chaves, uso de modelos).
+- ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) `python-webapp`: API principal do MyCrew — chat, personas, knowledge e execucao de fluxos n8n.
 - ![Nginx](https://img.shields.io/badge/-Nginx-009639?style=flat-square&logo=nginx&logoColor=white) `mycrew-frontend`: interface web para chat, anexar conhecimento e acionar fluxos.
-- ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) `python-webapp`: API principal de chat, personas, knowledge e execucao de fluxos n8n.
-- ![Open WebUI](https://img.shields.io/badge/-Open%20WebUI-1a1a1a?style=flat-square) `open-webui`: gestao de modelos/agentes.
-- ![Ollama](https://img.shields.io/badge/-Ollama-000000?style=flat-square&logo=ollama&logoColor=white) `ollama`: inferencia local e embeddings.
-- ![Qdrant](https://img.shields.io/badge/-Qdrant-DC244C?style=flat-square&logo=qdrant&logoColor=white) `qdrant`: memoria vetorial para retroalimentacao.
-- ![n8n](https://img.shields.io/badge/-n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white) `n8n`: orquestracao de fluxos de conversa e conhecimento.
+
+### Tools — opcionais (profile `tools`)
+
+Sobem com `docker compose --profile tools up -d`. Suporte operacional: observabilidade, gestao e automacao — nao sao necessarios para o MyCrew funcionar.
+
 - ![Dozzle](https://img.shields.io/badge/-Dozzle-1E88E5?style=flat-square) `dozzle`: visualizacao de logs dos containers do stack em tempo real.
-- ![Portainer](https://img.shields.io/badge/-Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white) `portainer`: gestao e monitoramento dos containers/volumes/redes Docker.
+- ![Portainer](https://img.shields.io/badge/-Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white) `portainer`: gestao e monitoramento de containers, volumes e redes Docker.
 - ![Uptime Kuma](https://img.shields.io/badge/-Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white) `uptime-kuma`: monitoramento de disponibilidade (uptime) dos servicos do stack.
-- ![Aider](https://img.shields.io/badge/-Aider-D97757?style=flat-square) `aider` (Dev Agent): agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
-- ![Watchtower](https://img.shields.io/badge/-Watchtower-326DE6?style=flat-square) `watchtower`: atualizacao automatica de imagens Docker e reinicio de containers.
-- ![LiteLLM](https://img.shields.io/badge/-LiteLLM-4A90D9?style=flat-square) `litellm`: AI gateway para roteamento de modelos e provedores de LLM.
-- ![PostgreSQL](https://img.shields.io/badge/-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) `postgres`: banco de dados para usuarios, agentes, chats e memoria.
+- ![Aider](https://img.shields.io/badge/-Aider-D97757?style=flat-square) `aider`: agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
+- ![Watchtower](https://img.shields.io/badge/-Watchtower-326DE6?style=flat-square) `watchtower`: atualizacao automatica de imagens Docker e reinicio de containers (atualmente comentado no compose).
+
+> Para subir tudo de uma vez: `docker compose --profile core --profile tools up -d`
+> Ou defina `COMPOSE_PROFILES=core,tools` no `.env` e use apenas `docker compose up -d`.
 
 ## Pre-requisitos
 

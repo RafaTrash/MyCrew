@@ -6,13 +6,14 @@ import json
 import os
 import socket
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from uuid import uuid4
 
 import io
 
 import httpx
 import paramiko
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -54,11 +55,15 @@ from .config import (
     QDRANT_TOP_K,
     QDRANT_URL,
 )
+from .database import get_db_cursor, init_iot_table
 from .schemas import (
     ChatRequest,
     ChatResponse,
     FlowStartRequest,
     FlowStartResponse,
+    IoTDeviceCreate,
+    IoTDeviceResponse,
+    IoTDeviceUpdate,
     KnowledgeAttachRequest,
     KnowledgeSearchResponse,
     SshConnectRequest,
@@ -80,6 +85,33 @@ FLOW_RUNS: dict[str, dict[str, Any]] = {}
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _get_cipher() -> Fernet:
+    key = os.getenv("MYCREW_CRYPTO_KEY")
+    if not key or key == "CHANGE_ME_IN_PRODUCTION":
+        raise RuntimeError(
+            "MYCREW_CRYPTO_KEY não configurada. "
+            "Gere uma chave com: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+            "e defina a variável de ambiente."
+        )
+    try:
+        return Fernet(key.encode() if isinstance(key, str) else key)
+    except Exception as exc:
+        raise RuntimeError(f"MYCREW_CRYPTO_KEY inválida: {exc}")
+
+
+def encrypt_password(password: str) -> str:
+    cipher = _get_cipher()
+    return cipher.encrypt(password.encode()).decode()
+
+
+def decrypt_password(password_hash: str) -> str:
+    cipher = _get_cipher()
+    try:
+        return cipher.decrypt(password_hash.encode()).decode()
+    except Exception:
+        return ""
 
 
 def openwebui_headers() -> dict[str, str]:
@@ -1003,13 +1035,44 @@ async def ssh_connect(payload: SshConnectRequest) -> SshConnectResponse:
     return result
 
 
+@app.get("/api/iot/devices/{device_id}/credentials")
+async def get_iot_device_credentials(device_id: int) -> dict[str, Any]:
+    """Return decrypted credentials for a device (for SSH connections)."""
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT id, name, ip_address, port, username, auth_method, password_hash, private_key
+            FROM mycrew_iotdevices 
+            WHERE id = %s
+        """, (device_id,))
+        device = cur.fetchone()
+        
+        if not device:
+            raise HTTPException(status_code=404, detail="Dispositivo nao encontrado")
+    
+    decrypted_password = ""
+    if device.get("password_hash"):
+        decrypted_password = decrypt_password(device["password_hash"])
+    
+    return {
+        "id": device["id"],
+        "host": device["ip_address"],
+        "port": device["port"],
+        "username": device["username"],
+        "auth_method": device["auth_method"],
+        "password": decrypted_password,
+        "private_key": device.get("private_key") or "",
+    }
+
+
 @app.websocket("/api/iot/ssh/terminal")
 async def ssh_terminal(websocket: WebSocket):
     """
     WebSocket para terminal SSH interativo.
     Primeira mensagem deve ser um JSON com os parametros de conexao:
     { "host": "...", "port": 22, "username": "root", "password": "...",
-      "key_type": "password", "private_key": "..." }
+      "key_type": "password", "private_key": "...", "device_id": 123 }
+    Se device_id for fornecido e password/private_key estiverem vazios,
+    busca as credenciais criptografadas do banco.
     A partir dai, cada mensagem de texto do cliente e enviada ao shell SSH
     e a saida do shell e retornada ao cliente.
     """
@@ -1037,6 +1100,20 @@ async def ssh_terminal(websocket: WebSocket):
         private_key_str = params.get("private_key", "")
         cols = int(params.get("cols", 80))
         rows = int(params.get("rows", 24))
+        device_id = params.get("device_id")
+
+        # If device_id is provided and credentials are missing, fetch from DB
+        if device_id and not password and not private_key_str and key_type == "password":
+            try:
+                creds = get_iot_device_credentials_sync(int(device_id))
+                if creds:
+                    host = creds.get("host", host) or host
+                    username = creds.get("username", username) or username
+                    password = creds.get("password", "") or ""
+                    key_type = creds.get("auth_method", key_type) or key_type
+                    private_key_str = creds.get("private_key", "") or ""
+            except Exception:
+                pass  # Use provided credentials if DB fetch fails
 
         if not host:
             await websocket.send_text(json.dumps({"error": "host nao informado"}))
@@ -1187,3 +1264,243 @@ async def ssh_terminal(websocket: WebSocket):
             await websocket.close(1000)
         except Exception:
             pass
+
+
+# ===== IoT Device Endpoints =====
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize IoT table on startup."""
+    try:
+        init_iot_table()
+    except Exception:
+        pass  # Table might already exist or DB not ready yet
+
+
+@app.get("/api/iot/devices")
+async def list_iot_devices() -> dict[str, Any]:
+    """List all registered IoT devices."""
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT id, name, ip_address, port, username, description, 
+                   auth_method, status, last_connection, created_at, updated_at
+            FROM mycrew_iotdevices 
+            ORDER BY created_at DESC
+        """)
+        devices = cur.fetchall()
+    return {"devices": devices, "total": len(devices)}
+
+
+@app.post("/api/iot/devices", response_model=IoTDeviceResponse)
+async def create_iot_device(payload: IoTDeviceCreate) -> IoTDeviceResponse:
+    """Create a new IoT device registration."""
+    password_hash = encrypt_password(payload.password) if payload.password else None
+    
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("""
+            INSERT INTO mycrew_iotdevices (name, ip_address, port, username, description, auth_method, password_hash, private_key)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, name, ip_address, port, username, description, 
+                       auth_method, private_key, status, last_connection, created_at, updated_at
+        """, (
+            payload.name,
+            payload.ip_address,
+            payload.port,
+            payload.username,
+            payload.description,
+            payload.auth_method,
+            password_hash,
+            payload.private_key,
+        ))
+        device = cur.fetchone()
+    
+    return IoTDeviceResponse(
+        id=device["id"],
+        name=device["name"],
+        ip_address=device["ip_address"],
+        port=device["port"],
+        username=device["username"],
+        description=device["description"] or "",
+        auth_method=device["auth_method"],
+        private_key=device["private_key"] or "",
+        status=device["status"],
+        last_connection=device["last_connection"].isoformat() if device["last_connection"] else None,
+        created_at=device["created_at"].isoformat(),
+        updated_at=device["updated_at"].isoformat(),
+    )
+
+
+@app.put("/api/iot/devices/{device_id}", response_model=IoTDeviceResponse)
+async def update_iot_device(device_id: int, payload: IoTDeviceUpdate) -> IoTDeviceResponse:
+    """Update an existing IoT device registration."""
+    with get_db_cursor(commit=True) as cur:
+        # Build dynamic update query
+        updates = []
+        values = []
+        
+        if payload.name is not None:
+            updates.append("name = %s")
+            values.append(payload.name)
+        if payload.ip_address is not None:
+            updates.append("ip_address = %s")
+            values.append(payload.ip_address)
+        if payload.port is not None:
+            updates.append("port = %s")
+            values.append(payload.port)
+        if payload.username is not None:
+            updates.append("username = %s")
+            values.append(payload.username)
+        if payload.description is not None:
+            updates.append("description = %s")
+            values.append(payload.description)
+        if payload.auth_method is not None:
+            updates.append("auth_method = %s")
+            values.append(payload.auth_method)
+        if payload.private_key is not None:
+            updates.append("private_key = %s")
+            values.append(payload.private_key)
+        if payload.password is not None:
+            # Only update password if a new value is provided
+            if payload.password:
+                encrypted = encrypt_password(payload.password)
+                updates.append("password_hash = %s")
+                values.append(encrypted)
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+        
+        values.append(device_id)
+        query = f"UPDATE mycrew_iotdevices SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s RETURNING *"
+        cur.execute(query, values)
+        device = cur.fetchone()
+        
+        if not device:
+            raise HTTPException(status_code=404, detail="Dispositivo nao encontrado")
+    
+    return IoTDeviceResponse(
+        id=device["id"],
+        name=device["name"],
+        ip_address=device["ip_address"],
+        port=device["port"],
+        username=device["username"],
+        description=device["description"] or "",
+        auth_method=device["auth_method"],
+        private_key=device["private_key"] or "",
+        status=device["status"],
+        last_connection=device["last_connection"].isoformat() if device["last_connection"] else None,
+        created_at=device["created_at"].isoformat(),
+        updated_at=device["updated_at"].isoformat(),
+    )
+
+
+@app.delete("/api/iot/devices/{device_id}")
+async def delete_iot_device(device_id: int) -> dict[str, Any]:
+    """Delete an IoT device registration."""
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM mycrew_iotdevices WHERE id = %s RETURNING id", (device_id,))
+        deleted = cur.fetchone()
+        
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Dispositivo nao encontrado")
+    
+    return {"deleted": True, "id": device_id}
+
+
+def get_iot_device_credentials_sync(device_id: int) -> dict[str, Any] | None:
+    """Synchronous helper to fetch device credentials for WebSocket."""
+    try:
+        with get_db_cursor() as cur:
+            cur.execute("""
+                SELECT id, name, ip_address, port, username, auth_method, password_hash, private_key
+                FROM mycrew_iotdevices 
+                WHERE id = %s
+            """, (device_id,))
+            device = cur.fetchone()
+            
+            if not device:
+                return None
+        
+        decrypted_password = ""
+        if device.get("password_hash"):
+            decrypted_password = decrypt_password(device["password_hash"])
+        
+        return {
+            "id": device["id"],
+            "host": device["ip_address"],
+            "port": device["port"],
+            "username": device["username"],
+            "auth_method": device["auth_method"],
+            "password": decrypted_password,
+            "private_key": device.get("private_key") or "",
+        }
+    except Exception:
+        return None
+
+
+@app.post("/api/iot/devices/{device_id}/status")
+async def update_iot_device_status(device_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Update device connection status."""
+    status = payload.get("status", "disconnected")
+    if status not in ("online", "offline", "disconnected"):
+        status = "disconnected"
+    
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("""
+            UPDATE mycrew_iotdevices 
+            SET status = %s, last_connection = NOW() 
+            WHERE id = %s
+        """, (status, device_id))
+    
+    return {"updated": True, "device_id": device_id, "status": status}
+
+
+@app.get("/api/iot/devices/{device_id}/check-status")
+async def check_iot_device_status(device_id: int) -> dict[str, Any]:
+    """Check if a device is reachable by attempting TCP connection to its SSH port."""
+    with get_db_cursor() as cur:
+        cur.execute("""
+            SELECT id, name, ip_address, port, username
+            FROM mycrew_iotdevices 
+            WHERE id = %s
+        """, (device_id,))
+        device = cur.fetchone()
+        
+        if not device:
+            raise HTTPException(status_code=404, detail="Dispositivo nao encontrado")
+    
+    # Attempt TCP connection to check if device is online
+    loop = asyncio.get_running_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: socket.create_connection((device["ip_address"], device["port"]), timeout=3.0)
+            ),
+            timeout=4.0
+        )
+        result.close()
+        is_online = True
+        error_msg = None
+    except Exception as exc:
+        is_online = False
+        error_msg = str(exc)
+    
+    # Update device status in database
+    new_status = "online" if is_online else "offline"
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("""
+            UPDATE mycrew_iotdevices 
+            SET status = %s, last_connection = NOW() 
+            WHERE id = %s
+        """, (new_status, device_id))
+    
+    return {
+        "device_id": device_id,
+        "name": device["name"],
+        "ip_address": device["ip_address"],
+        "port": device["port"],
+        "online": is_online,
+        "status": new_status,
+        "error": error_msg,
+        "checked_at": now_iso(),
+    }

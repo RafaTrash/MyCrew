@@ -44,3 +44,4 @@ Estilo:
 
 Modelo Sugerido:
 - mistral:7b-instruct
+- docker exec -it mycrew-ollama ollama pull mistral:7b-instruct

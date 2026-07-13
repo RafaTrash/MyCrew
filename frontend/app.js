@@ -71,12 +71,13 @@ const linkWatchtower = document.getElementById("link-watchtower");
 const dozzleFrame = document.getElementById("dozzle-frame");
 
 function esc(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  var s = String(value || "");
+  return s
+    .replace(/&/g, function() { return "&"; })
+    .replace(/</g, function() { return "<"; })
+    .replace(/>/g, function() { return ">"; })
+    .replace(/"/g, function() { return '"'; })
+    .replace(/'/g, function() { return "'"; });
 }
 
 function ensurePersonaSelected() {
@@ -102,7 +103,6 @@ function setActivePage(target) {
   if (targetPage) targetPage.classList.add("active");
   if (targetBtn) targetBtn.classList.add("active");
 
-  // Carrega o iframe do Dozzle apenas quando a aba Monitor eh aberta.
   if (target === "monitor" && dozzleFrame && dozzleFrame.dataset.src && dozzleFrame.src === "about:blank") {
     dozzleFrame.src = dozzleFrame.dataset.src;
   }
@@ -143,16 +143,12 @@ function renderKpis(data) {
     { cls: "blue", label: "Modelos", value: String(c.models_total ?? 0), foot: "Ollama" },
     { cls: "amber", label: "Coleção Qdrant", value: esc(data.qdrant_collection || "-"), foot: "memória vetorial", small: true },
   ];
-  kpiRow.innerHTML = cards
-    .map(
-      (k) => `
+  kpiRow.innerHTML = cards.map((k) => `
       <div class='kpi ${k.cls}'>
         <div class='kpi-label'>${esc(k.label)}</div>
         <div class='kpi-value ${k.small ? "mono" : ""}' style='${k.small ? "font-size:16px" : ""}'>${k.value}</div>
         <div class='kpi-foot'>${esc(k.foot)}</div>
-      </div>`
-    )
-    .join("");
+      </div>`).join("");
 }
 
 function renderStack(data) {
@@ -161,9 +157,7 @@ function renderStack(data) {
   const ep = data.endpoints || {};
   stackCount.textContent = `${c.services_online ?? 0}/${services.length}`;
   stackList.innerHTML = services.length
-    ? services
-        .map(
-          (s) => `
+    ? services.map((s) => `
       <div class='stack-item'>
         <span class='svc-logo'><img src='/logos/${esc(s.key)}.svg' alt='' onerror='this.remove()' /></span>
         <span class='dot ${s.online ? "online" : "offline"}'></span>
@@ -173,13 +167,10 @@ function renderStack(data) {
           ${s.key === "qdrant" && ep.qdrant_dashboard ? `<a class='si-addr si-dash' href='${esc(ep.qdrant_dashboard)}' target='_blank' rel='noreferrer'>Dashboard ↗</a>` : ""}
         </div>
         <span class='badge ${s.online ? "on" : "off"}'>${s.online ? "ONLINE" : "OFFLINE"}</span>
-      </div>`
-        )
-        .join("")
+      </div>`).join("")
     : "<div class='model-empty'>Sem serviços.</div>";
 }
 
-// Provider icons and colors for model badges
 function getProviderIcon(provider) {
   const icons = {
     ollama: "●",
@@ -194,51 +185,37 @@ function getProviderIcon(provider) {
 }
 
 function renderModels(modelsData) {
-  // Suporta tanto o formato antigo (array de strings) quanto o novo (objeto com models)
   let models = [];
   if (Array.isArray(modelsData)) {
     models = modelsData.map(m => typeof m === "string" ? { id: m, name: m, provider: "ollama", origin: "local" } : m);
   } else if (modelsData && modelsData.models) {
     models = modelsData.models;
   }
-  
-  // Se não houver modelsData, tenta o formato antigo do /api/status
   if (!models.length && modelsData && modelsData.ollama_models) {
     models = modelsData.ollama_models.map(m => ({ id: m, name: m, provider: "ollama", origin: "local" }));
   }
-  
-  const localCount = models.filter(m => m.origin === "local").length;
-  const apiCount = models.filter(m => m.origin === "api").length;
-  
   modelsCount.textContent = String(models.length);
-  
   if (models.length === 0) {
     modelsList.innerHTML = "<div class='model-empty'>Nenhum modelo disponível.</div>";
     return;
   }
-  
-  // Agrupa por provider
   const byProvider = {};
   models.forEach(m => {
     const provider = m.provider || "unknown";
     if (!byProvider[provider]) byProvider[provider] = [];
     byProvider[provider].push(m);
   });
-  
-  // Ordena providers: local primeiro, depois alfabeticamente
   const providerOrder = { ollama: 0, openai: 1, openrouter: 2, gemini: 3, groq: 4, xai: 5, anthropic: 6 };
   const sortedProviders = Object.keys(byProvider).sort((a, b) => {
     const orderA = providerOrder[a] ?? 99;
     const orderB = providerOrder[b] ?? 99;
     return orderA - orderB || a.localeCompare(b);
   });
-  
-  modelsList.innerHTML = sortedProviders
-    .map(provider => {
-      const providerModels = byProvider[provider];
-      const info = getProviderInfo(provider);
-      const originBadge = provider === "ollama" ? "LOCAL" : "API";
-      return `
+  modelsList.innerHTML = sortedProviders.map(provider => {
+    const providerModels = byProvider[provider];
+    const info = getProviderInfo(provider);
+    const originBadge = provider === "ollama" ? "LOCAL" : "API";
+    return `
         <div class='provider-group'>
           <div class='provider-header'>
             <span class='provider-icon'>${getProviderIcon(provider)}</span>
@@ -251,13 +228,10 @@ function renderModels(modelsData) {
               <div class='model-item' title='${esc(m.id)}'>
                 <span class='model-name'>${esc(m.name)}</span>
                 ${m.mode ? `<span class='model-mode' title='Modo'>${esc(m.mode)}</span>` : ""}
-              </div>
-            `).join("")}
+              </div>`).join("")}
           </div>
-        </div>
-      `;
-    })
-    .join("");
+        </div>`;
+  }).join("");
 }
 
 function getProviderInfo(provider) {
@@ -273,17 +247,6 @@ function getProviderInfo(provider) {
   return providerData[provider] || { label: provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "Desconhecido", color: "muted" };
 }
 
-// Mantém compatibilidade com chamada existente
-function renderModelsCompat(data) {
-  // Usa o novo formato se disponível, senão o antigo
-  if (data && data.models) {
-    renderModels(data);
-  } else {
-    // Fallback para formato antigo
-    renderModels(data.ollama_models || []);
-  }
-}
-
 function renderSidebarHealth(data) {
   const c = data.counters || {};
   const online = c.services_online ?? 0;
@@ -296,15 +259,11 @@ function renderSidebarHealth(data) {
 
 function renderEndpoints(data) {
   const ep = data.endpoints || {};
-  if (ep.qdrant_dashboard) {
-    if (linkQdrantDashboard) linkQdrantDashboard.href = ep.qdrant_dashboard;
-  }
+  if (ep.qdrant_dashboard && linkQdrantDashboard) linkQdrantDashboard.href = ep.qdrant_dashboard;
   if (ep.portainer && linkPortainer) linkPortainer.href = ep.portainer;
   if (ep.aider && linkAider) linkAider.href = ep.aider;
   if (ep.litellm && linkLitellm) linkLitellm.href = ep.litellm;
   if (ep.watchtower && linkWatchtower) linkWatchtower.href = ep.watchtower;
-  // Dozzle e servido pelo nginx do frontend em /dozzle/ (mesma origem),
-  // para permitir o embed via iframe sem bloqueio de X-Frame-Options.
   if (linkDozzle) linkDozzle.href = "/dozzle/";
   if (dozzleFrame) dozzleFrame.dataset.src = "/dozzle/";
 }
@@ -384,18 +343,13 @@ function renderChat() {
     chatLog.innerHTML = "<div class='msg assistant'>Selecione um agente para iniciar.</div>";
     return;
   }
-
   const history = state.historyByPersona[personaId] || [];
   let html = history.length
-    ? history
-        .map((item) => `<div class='msg ${item.role === "user" ? "user" : "assistant"}'>${esc(item.content)}</div>`)
-        .join("")
+    ? history.map((item) => `<div class='msg ${item.role === "user" ? "user" : "assistant"}'>${esc(item.content)}</div>`).join("")
     : "<div class='msg assistant'>Conversa iniciada. Pode mandar a primeira mensagem.</div>";
-
   if (state.typingPersonaId === personaId) {
     html += "<div class='msg assistant typing-bubble'><span></span><span></span><span></span></div>";
   }
-
   chatLog.innerHTML = html;
   chatLog.scrollTop = chatLog.scrollHeight;
 }
@@ -403,14 +357,11 @@ function renderChat() {
 function selectPersonaByIndex(index, jumpToChat = false) {
   const persona = state.personas[index];
   if (!persona) return;
-
   state.selectedPersona = persona;
   state.historyByPersona[persona.id] = state.historyByPersona[persona.id] || [];
   rememberSelected(persona.id);
-
   renderAgentContainers();
   renderChat();
-
   if (jumpToChat) {
     setActivePage("chat");
     chatInput.focus();
@@ -420,9 +371,7 @@ function selectPersonaByIndex(index, jumpToChat = false) {
 async function loadStatus() {
   try {
     const res = await fetch("/api/status");
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     renderKpis(data);
     renderStack(data);
@@ -439,19 +388,14 @@ async function loadStatus() {
 async function loadModels() {
   try {
     const res = await fetch("/api/models");
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     renderModels(data);
-    // Atualiza o contador no sidebar
     if (data.counter) {
-      stackSub.textContent = 
-        `${data.counter.local ?? 0} locais · ${data.counter.api ?? 0} APIs · ${data.total ?? 0} modelos`;
+      stackSub.textContent = `${data.counter.local ?? 0} locais · ${data.counter.api ?? 0} APIs · ${data.total ?? 0} modelos`;
     }
   } catch (err) {
     console.warn("Erro ao carregar modelos do /api/models:", err.message);
-    // Fallback: já foi carregado via /api/status -> renderModels(data)
   }
 }
 
@@ -460,40 +404,29 @@ function renderAgentContainers() {
   personasBox.innerHTML = state.personas.length
     ? state.personas.map((p, i) => agentCardHtml(p, i)).join("")
     : empty;
-
   if (agentsRail) {
     agentsRail.innerHTML = state.personas.length
       ? state.personas.map((p, i) => railRowHtml(p, i)).join("")
       : empty;
   }
   if (agentsRailCount) agentsRailCount.textContent = String(state.personas.length);
-
-  if (chatSwitcher) {
-    chatSwitcher.innerHTML = state.personas.map((p, i) => chatChipHtml(p, i)).join("");
-  }
-
+  if (chatSwitcher) chatSwitcher.innerHTML = state.personas.map((p, i) => chatChipHtml(p, i)).join("");
   renderKnowledgeAgentOptions();
-
   document.querySelectorAll("[data-open]").forEach((btn) => {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       selectPersonaByIndex(Number(btn.getAttribute("data-open")), true);
     });
   });
-
   document.querySelectorAll(".agent-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      selectPersonaByIndex(Number(card.getAttribute("data-index")), false);
-    });
+    card.addEventListener("click", () => selectPersonaByIndex(Number(card.getAttribute("data-index")), false));
   });
 }
 
 function renderKnowledgeAgentOptions() {
   if (!knowledgeAgent) return;
   const current = knowledgeAgent.value || state.selectedPersona?.id || "";
-  knowledgeAgent.innerHTML = state.personas
-    .map((p) => `<option value='${esc(p.id)}'>${esc(p.nome)} · ${esc(p.model || "modelo")}</option>`)
-    .join("");
+  knowledgeAgent.innerHTML = state.personas.map((p) => `<option value='${esc(p.id)}'>${esc(p.nome)} · ${esc(p.model || "modelo")}</option>`).join("");
   const has = state.personas.some((p) => p.id === current);
   knowledgeAgent.value = has ? current : state.personas[0]?.id || "";
 }
@@ -502,22 +435,13 @@ async function loadPersonas() {
   personasBox.innerHTML = "<div class='model-empty'>Carregando agentes...</div>";
   try {
     const res = await fetch("/api/personas");
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     state.personas = data.personas || [];
-
     renderAgentContainers();
-
     if (!state.personas.length) return;
-
     let storedId = "";
-    try {
-      storedId = localStorage.getItem(SELECTED_KEY) || "";
-    } catch {
-      storedId = "";
-    }
+    try { storedId = localStorage.getItem(SELECTED_KEY) || ""; } catch { storedId = ""; }
     const targetId = state.selectedPersona?.id || storedId;
     const idx = state.personas.findIndex((p) => p.id === targetId);
     selectPersonaByIndex(idx >= 0 ? idx : 0, false);
@@ -528,44 +452,26 @@ async function loadPersonas() {
 
 async function sendChat() {
   let persona;
-  try {
-    persona = ensurePersonaSelected();
-  } catch (err) {
-    alert(err.message);
-    return;
-  }
-
+  try { persona = ensurePersonaSelected(); } catch (err) { alert(err.message); return; }
   const text = chatInput.value.trim();
   if (!text) return;
-
   const personaId = persona.id;
   state.historyByPersona[personaId] = state.historyByPersona[personaId] || [];
   const history = state.historyByPersona[personaId];
-
   history.push({ role: "user", content: text });
   chatInput.value = "";
   saveHistory();
   state.typingPersonaId = personaId;
   renderChat();
   renderAgentContainers();
-
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        persona_id: personaId,
-        message: text,
-        history,
-        retrieve_knowledge: true,
-      }),
+      body: JSON.stringify({ persona_id: personaId, message: text, history, retrieve_knowledge: true }),
     });
-
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || data.error || "erro no chat");
-    }
-
+    if (!res.ok) throw new Error(data.detail || data.error || "erro no chat");
     history.push({ role: "assistant", content: data.reply || "" });
   } catch (err) {
     history.push({ role: "assistant", content: `Erro: ${err.message}` });
@@ -580,11 +486,7 @@ async function sendChat() {
 function renderKnowledgeFiles() {
   if (!knowledgeFileList) return;
   const files = state.knowledgeFiles || [];
-  knowledgeFileList.innerHTML = files
-    .map(
-      (f, i) => `<span class='file-chip'>❒ ${esc(f.name)} <button type='button' data-rmfile='${i}' aria-label='remover'>✕</button></span>`
-    )
-    .join("");
+  knowledgeFileList.innerHTML = files.map((f, i) => `<span class='file-chip'>❒ ${esc(f.name)} <button type='button' data-rmfile='${i}' aria-label='remover'>✕</button></span>`).join("");
   knowledgeFileList.querySelectorAll("[data-rmfile]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.knowledgeFiles.splice(Number(btn.getAttribute("data-rmfile")), 1);
@@ -602,42 +504,21 @@ function addKnowledgeFiles(fileList) {
 
 async function attachKnowledge() {
   const personaId = knowledgeAgent?.value || state.selectedPersona?.id || "";
-  if (!personaId) {
-    alert("Selecione um agente.");
-    return;
-  }
-
+  if (!personaId) { alert("Selecione um agente."); return; }
   const title = String(knowledgeTitle?.value || "").trim();
   const content = String(knowledgeContent?.value || "").trim();
   const files = state.knowledgeFiles || [];
-
-  if (!files.length && !content) {
-    alert("Selecione arquivos ou cole um conteúdo.");
-    return;
-  }
-
+  if (!files.length && !content) { alert("Selecione arquivos ou cole um conteúdo."); return; }
   const items = [];
   for (const f of files) {
     let text = "";
-    try {
-      text = await f.text();
-    } catch {
-      text = "";
-    }
+    try { text = await f.text(); } catch { text = ""; }
     if (text.trim()) items.push({ title: title || f.name, source: f.name, content: text });
   }
   if (content) items.push({ title: title || "Conhecimento manual", source: "manual", content });
-
-  if (!items.length) {
-    setResult(knowledgeResult, "Nenhum conteúdo legível para anexar.");
-    return;
-  }
-
+  if (!items.length) { setResult(knowledgeResult, "Nenhum conteúdo legível para anexar."); return; }
   setResult(knowledgeResult, `Anexando ${items.length} item(ns) para '${personaId}'...`);
-
-  let ok = 0;
-  let totalChunks = 0;
-  const errors = [];
+  let ok = 0, totalChunks = 0, errors = [];
   for (const it of items) {
     try {
       const res = await fetch("/api/knowledge/attach", {
@@ -647,21 +528,11 @@ async function attachKnowledge() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || data.error || "falha ao anexar");
-      ok += 1;
-      totalChunks += data.chunks || 0;
-    } catch (err) {
-      errors.push(`${it.source}: ${err.message}`);
-    }
+      ok += 1; totalChunks += data.chunks || 0;
+    } catch (err) { errors.push(`${it.source}: ${err.message}`); }
   }
-
-  setResult(
-    knowledgeResult,
-    `Concluído para '${personaId}': ${ok}/${items.length} itens · ${totalChunks} chunks indexados.` +
-      (errors.length ? `\nErros:\n${errors.join("\n")}` : "")
-  );
-
-  state.knowledgeFiles = [];
-  renderKnowledgeFiles();
+  setResult(knowledgeResult, `Concluído para '${personaId}': ${ok}/${items.length} itens · ${totalChunks} chunks indexados.` + (errors.length ? `\nErros:\n${errors.join("\n")}` : ""));
+  state.knowledgeFiles = []; renderKnowledgeFiles();
   if (knowledgeContent) knowledgeContent.value = "";
   if (knowledgeFilesInput) knowledgeFilesInput.value = "";
 }
@@ -672,51 +543,24 @@ function bindKnowledge() {
     knowledgeFilesInput.addEventListener("change", () => addKnowledgeFiles(knowledgeFilesInput.files));
   }
   if (knowledgeDropzone) {
-    ["dragenter", "dragover"].forEach((ev) =>
-      knowledgeDropzone.addEventListener(ev, (e) => {
-        e.preventDefault();
-        knowledgeDropzone.classList.add("dragover");
-      })
-    );
-    ["dragleave", "drop"].forEach((ev) =>
-      knowledgeDropzone.addEventListener(ev, (e) => {
-        e.preventDefault();
-        knowledgeDropzone.classList.remove("dragover");
-      })
-    );
-    knowledgeDropzone.addEventListener("drop", (e) => {
-      if (e.dataTransfer && e.dataTransfer.files) addKnowledgeFiles(e.dataTransfer.files);
-    });
+    ["dragenter", "dragover"].forEach((ev) => knowledgeDropzone.addEventListener(ev, (e) => { e.preventDefault(); knowledgeDropzone.classList.add("dragover"); }));
+    ["dragleave", "drop"].forEach((ev) => knowledgeDropzone.addEventListener(ev, (e) => { e.preventDefault(); knowledgeDropzone.classList.remove("dragover"); }));
+    knowledgeDropzone.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files) addKnowledgeFiles(e.dataTransfer.files); });
   }
 }
 
 async function startFlow(flowType, message = "", payload = {}) {
   let persona;
-  try {
-    persona = ensurePersonaSelected();
-  } catch (err) {
-    alert(err.message);
-    return;
-  }
-
+  try { persona = ensurePersonaSelected(); } catch (err) { alert(err.message); return; }
   setResult(flowStatus, `Disparando fluxo '${flowType}' no n8n...`);
-
   try {
     const res = await fetch("/api/flows/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        flow_type: flowType,
-        persona_id: persona.id,
-        message,
-        payload,
-      }),
+      body: JSON.stringify({ flow_type: flowType, persona_id: persona.id, message, payload }),
     });
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || data.error || "falha ao iniciar fluxo");
-    }
-
+    if (!res.ok) throw new Error(data.detail || data.error || "falha ao iniciar fluxo");
     state.activeFlowId = data.flow_id;
     setResult(flowStatus, `Fluxo iniciado: ${data.flow_id}\nstatus: ${data.status}`);
     setActivePage("flows");
@@ -728,24 +572,14 @@ async function startFlow(flowType, message = "", payload = {}) {
 
 async function pollFlowStatus(flowId) {
   if (!flowId) return;
-
   try {
     const res = await fetch(`/api/flows/${encodeURIComponent(flowId)}`);
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || data.error || "erro ao consultar fluxo");
-    }
-
+    if (!res.ok) throw new Error(data.detail || data.error || "erro ao consultar fluxo");
     const status = data.status || "running";
     const responseText = data.response ? JSON.stringify(data.response, null, 2) : "{}";
-    setResult(
-      flowStatus,
-      `flow_id: ${data.flow_id}\ntipo: ${data.flow_type}\nstatus: ${status}\natualizado: ${data.updated_at || "-"}\n\nresposta:\n${responseText}`
-    );
-
-    if (status === "running") {
-      setTimeout(() => pollFlowStatus(flowId), 3000);
-    }
+    setResult(flowStatus, `flow_id: ${data.flow_id}\ntipo: ${data.flow_type}\nstatus: ${status}\natualizado: ${data.updated_at || "-"}\n\nresposta:\n${responseText}`);
+    if (status === "running") setTimeout(() => pollFlowStatus(flowId), 3000);
   } catch (err) {
     setResult(flowStatus, `Erro ao consultar fluxo: ${err.message}`);
   }
@@ -753,22 +587,14 @@ async function pollFlowStatus(flowId) {
 
 async function sendChatViaFlow() {
   const text = chatInput.value.trim();
-  if (!text) {
-    alert("Digite a mensagem antes de enviar via n8n.");
-    return;
-  }
+  if (!text) { alert("Digite a mensagem antes de enviar via n8n."); return; }
   await startFlow("chat", text, { channel: "frontend" });
 }
 
 async function sendKnowledgeViaFlow() {
   const title = String(knowledgeTitle?.value || "").trim();
   const content = String(knowledgeContent?.value || "").trim();
-
-  if (!title || !content) {
-    alert("Preencha título e conteúdo para o fluxo de knowledge.");
-    return;
-  }
-
+  if (!title || !content) { alert("Preencha título e conteúdo para o fluxo de knowledge."); return; }
   await startFlow("knowledge", "", { title, source: "manual", content });
 }
 
@@ -801,51 +627,14 @@ function bindJumps() {
   });
 }
 
-// === Interactive SSH Terminal (WebSocket + xterm.js) ===
+// ===== SSH Terminal for IoT Devices =====
+let sshWs = null;
 let sshTerminal = null;
 let sshFitAddon = null;
-let sshWs = null;
-let sshConnectedHost = null;
-let sshConnectedPort = null;
-let sshConnectedUser = null;
 
-const sshHost = document.getElementById("ssh-host");
-const sshPort = document.getElementById("ssh-port");
-const sshUser = document.getElementById("ssh-user");
-const sshAuthMethod = document.getElementById("ssh-auth-method");
-const sshPassword = document.getElementById("ssh-password");
-const sshPrivateKey = document.getElementById("ssh-private-key");
-const sshCommand = document.getElementById("ssh-command");
-const sshConnectBtn = document.getElementById("ssh-connect-btn");
-const sshClearBtn = document.getElementById("ssh-clear-btn");
-const sshResult = document.getElementById("ssh-result");
-const sshPasswordRow = document.getElementById("ssh-password-row");
-const sshKeyRow = document.getElementById("ssh-key-row");
-const sshTerminalSection = document.getElementById("ssh-terminal-section");
-const sshTerminalContainer = document.getElementById("ssh-terminal-container");
-const sshTerminalInfo = document.getElementById("ssh-terminal-info");
-const sshTerminalDisconnect = document.getElementById("ssh-terminal-disconnect");
-
-function setSshResult(value, isError = false) {
-  sshResult.textContent = value;
-  sshResult.style.color = isError ? "var(--red)" : "var(--ink)";
-}
-
-function toggleSshAuthMethod() {
-  const method = sshAuthMethod.value;
-  if (method === "password") {
-    sshPasswordRow.style.display = "";
-    sshKeyRow.style.display = "none";
-  } else {
-    sshPasswordRow.style.display = "none";
-    sshKeyRow.style.display = "";
-  }
-}
-
-sshAuthMethod.addEventListener("change", toggleSshAuthMethod);
-
-function initTerminal() {
-  if (!sshTerminal) {
+function initSSHTerminal() {
+  const sshTerminalContainer = document.getElementById("ssh-terminal-container");
+  if (!sshTerminal && sshTerminalContainer) {
     sshTerminal = new Terminal({
       cursorBlink: true,
       cursorStyle: "block",
@@ -874,8 +663,6 @@ function initTerminal() {
         brightWhite: "#e7edf7",
       },
     });
-    // The xterm-addon-fit UMD bundle wraps the class in { FitAddon: class },
-    // so window.FitAddon is an object, not the constructor directly.
     const FitAddonClass = window.FitAddon?.FitAddon || window.FitAddon;
     sshFitAddon = new FitAddonClass();
     sshTerminal.loadAddon(sshFitAddon);
@@ -884,204 +671,377 @@ function initTerminal() {
   }
 }
 
-function openInteractiveTerminal(host, port, username, password, privateKey, keyType) {
-  initTerminal();
+let currentDeviceId = null;
 
-  // Clear terminal
+async function updateDeviceStatus(deviceId, status) {
+  if (!deviceId) return;
+  try {
+    await fetch(`/api/iot/devices/${deviceId}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+  } catch (err) {
+    console.warn("Failed to update device status:", err);
+  }
+}
+
+function openIoTTerminal(host, port, username, password, privateKey, keyType, deviceId) {
+  currentDeviceId = deviceId || null;
+  initSSHTerminal();
   sshTerminal.reset();
-
-  // Build WebSocket URL - use same origin through nginx proxy
-  // This ensures WebSocket goes through nginx which proxies to backend
+  const sshTerminalSection = document.getElementById("ssh-terminal-section");
+  const sshTerminalInfo = document.getElementById("ssh-terminal-info");
   const wsUrl = window.location.protocol === "https:" 
     ? "wss://"+ window.location.host + "/api/iot/ssh/terminal" 
     : "ws://"+ window.location.host + "/api/iot/ssh/terminal";
-
   sshWs = new WebSocket(wsUrl);
-
   sshWs.onopen = () => {
-    // Send connection parameters
-    const params = {
-      host,
-      port,
-      username,
-      password: password || "",
-      key_type: keyType || "password",
-      private_key: privateKey || "",
-      cols: sshTerminal.cols,
-      rows: sshTerminal.rows,
-    };
-    sshWs.send(JSON.stringify(params));
-
-    sshConnectedHost = host;
-    sshConnectedPort = port;
-    sshConnectedUser = username;
-    sshTerminalInfo.textContent = `Conectado: ${username}@${host}:${port}`;
-    sshTerminalSection.style.display = "";
-
-    // Show connection in result box
-    setSshResult(`✅ Terminal interativo conectado a ${username}@${host}:${port}\nDigite comandos no terminal abaixo.`);
+    sshWs.send(JSON.stringify({ host, port, username, password: password || "", key_type: keyType || "password", private_key: privateKey || "", cols: sshTerminal.cols, rows: sshTerminal.rows }));
+    if (sshTerminalInfo) sshTerminalInfo.textContent = `Conectado: ${username}@${host}:${port}`;
+    if (sshTerminalSection) sshTerminalSection.style.display = "";
+    sshTerminal.write(`\r\n\x1b[32m✅ Conectado a ${username}@${host}:${port}\x1b[0m\r\n`);
+    updateDeviceStatus(currentDeviceId, "online");
   };
-
   sshWs.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.error) {
-        sshTerminal.write(`\r\n\x1b[31m❌ Erro: ${msg.error}\x1b[0m\r\n`);
-        setSshResult(`❌ ${msg.error}`, true);
-        return;
-      }
-      if (msg.connected) {
-        sshTerminal.write(`\r\n\x1b[32m✅ Conectado a ${msg.username}@${msg.host}:${msg.port}\x1b[0m\r\n`);
-        return;
-      }
-      if (msg.data) {
-        sshTerminal.write(msg.data);
-      }
-    } catch {
-      // Ignore parse errors
-    }
+      if (msg.error) sshTerminal.write(`\r\n\x1b[31m❌ Erro: ${msg.error}\x1b[0m\r\n`);
+      if (msg.data) sshTerminal.write(msg.data);
+    } catch {}
   };
-
   sshWs.onerror = () => {
     sshTerminal.write(`\r\n\x1b[31m❌ Erro de conexão WebSocket\x1b[0m\r\n`);
-    setSshResult("❌ Erro de conexão WebSocket", true);
+    if (sshTerminalInfo) sshTerminalInfo.textContent = "Erro de conexão";
+    updateDeviceStatus(currentDeviceId, "offline");
   };
-
   sshWs.onclose = () => {
     sshTerminal.write(`\r\n\x1b[33m🔌 Conexão encerrada.\x1b[0m\r\n`);
-    sshTerminalInfo.textContent = "Desconectado";
+    if (sshTerminalInfo) sshTerminalInfo.textContent = "Desconectado";
     sshWs = null;
+    updateDeviceStatus(currentDeviceId, "offline");
   };
-
-  // Send terminal input to WebSocket
   sshTerminal.onData((data) => {
-    if (sshWs && sshWs.readyState === WebSocket.OPEN) {
-      sshWs.send(JSON.stringify({ input: data }));
-    }
+    if (sshWs && sshWs.readyState === WebSocket.OPEN) sshWs.send(JSON.stringify({ input: data }));
   });
-
-  // Handle terminal resize
   const observer = new ResizeObserver(() => {
     if (sshFitAddon) {
       try {
         sshFitAddon.fit();
-        if (sshWs && sshWs.readyState === WebSocket.OPEN) {
-          sshWs.send(JSON.stringify({
-            resize: { cols: sshTerminal.cols, rows: sshTerminal.rows }
-          }));
-        }
-      } catch {
-        // ignore
-      }
+        if (sshWs && sshWs.readyState === WebSocket.OPEN) sshWs.send(JSON.stringify({ resize: { cols: sshTerminal.cols, rows: sshTerminal.rows }}));
+      } catch {}
     }
   });
-  observer.observe(sshTerminalContainer);
-
-  // Store observer ref for cleanup
+  const sshTerminalContainer = document.getElementById("ssh-terminal-container");
+  if (sshTerminalContainer) observer.observe(sshTerminalContainer);
   sshTerminal._resizeObserver = observer;
 }
 
-function closeInteractiveTerminal() {
-  if (sshWs) {
-    sshWs.send(JSON.stringify({ disconnect: true }));
-    sshWs.close();
-    sshWs = null;
-  }
+function closeIoTTerminal() {
+  if (sshWs) { sshWs.send(JSON.stringify({ disconnect: true })); sshWs.close(); sshWs = null; }
   if (sshTerminal) {
-    if (sshTerminal._resizeObserver) {
-      sshTerminal._resizeObserver.disconnect();
-      delete sshTerminal._resizeObserver;
-    }
+    if (sshTerminal._resizeObserver) { sshTerminal._resizeObserver.disconnect(); delete sshTerminal._resizeObserver; }
     sshTerminal.reset();
     sshTerminal.write("Terminal encerrado. Conecte-se novamente para interagir.\r\n");
   }
-  sshTerminalSection.style.display = "none";
-  sshTerminalInfo.textContent = "Desconectado";
-  sshConnectedHost = null;
+  const sshTerminalSection = document.getElementById("ssh-terminal-section");
+  if (sshTerminalSection) sshTerminalSection.style.display = "none";
+  const sshTerminalInfo = document.getElementById("ssh-terminal-info");
+  if (sshTerminalInfo) sshTerminalInfo.textContent = "Desconectado";
 }
 
-sshConnectBtn.addEventListener("click", async () => {
-  const host = sshHost.value.trim();
-  if (!host) {
-    setSshResult("Erro: informe o endereço IP do dispositivo.", true);
+// ===== IoT Device Management =====
+const addDeviceBtn = document.getElementById("add-device-btn");
+const deviceModal = document.getElementById("device-modal");
+const deviceModalClose = document.getElementById("device-modal-close");
+const deviceModalCancel = document.getElementById("device-modal-cancel");
+const deviceModalSave = document.getElementById("device-modal-save");
+const deviceModalTest = document.getElementById("device-modal-test");
+const deviceModalTitle = document.getElementById("device-modal-title");
+const deviceModalResult = document.getElementById("device-modal-result");
+const devicesCards = document.getElementById("devices-cards");
+
+// Device form fields
+const deviceName = document.getElementById("device-name");
+const deviceDescription = document.getElementById("device-description");
+const deviceIp = document.getElementById("device-ip");
+const devicePort = document.getElementById("device-port");
+const deviceUsername = document.getElementById("device-username");
+const deviceAuthMethod = document.getElementById("device-auth-method");
+const devicePassword = document.getElementById("device-password");
+const devicePrivateKey = document.getElementById("device-private-key");
+const devicePasswordRow = document.getElementById("device-password-row");
+const deviceKeyRow = document.getElementById("device-key-row");
+
+let editingDeviceId = null;
+
+function toggleDeviceAuthMethod() {
+  const method = deviceAuthMethod.value;
+  if (method === "password") { devicePasswordRow.style.display = ""; deviceKeyRow.style.display = "none"; }
+  else { devicePasswordRow.style.display = "none"; deviceKeyRow.style.display = ""; }
+}
+
+if (deviceAuthMethod) deviceAuthMethod.addEventListener("change", toggleDeviceAuthMethod);
+
+async function loadIoTDevices() {
+  if (!devicesCards) return;
+  devicesCards.innerHTML = "<div class='model-empty'>Carregando periféricos...</div>";
+  try {
+    const res = await fetch("/api/iot/devices");
+    if (!res.ok) { devicesCards.innerHTML = `<div class='model-empty'>Erro ao carregar periféricos: ${res.status}</div>`; return; }
+    const data = await res.json();
+    renderIoTDevices(data.devices || []);
+  } catch (err) {
+    devicesCards.innerHTML = `<div class='model-empty'>Erro: ${err.message}</div>`;
+  }
+}
+
+function renderIoTDevices(devices) {
+  if (!devicesCards) return;
+  if (devices.length === 0) {
+    devicesCards.innerHTML = "<div class='model-empty'>Nenhum periférico cadastrado. Clique em '+ Adicionar Periférico' para cadastrar.</div>";
     return;
   }
+  devicesCards.innerHTML = devices.map(device => `
+    <div class='iot-device-card' data-id='${device.id}'>
+      <div class='iot-device-header'>
+        <span class='iot-device-icon'>🔌</span>
+        <div class='iot-device-info'>
+          <strong class='iot-device-name'>${esc(device.name)}</strong>
+          <span class='iot-device-ip'>${esc(device.ip_address)}:${device.port}</span>
+        </div>
+        <span class='iot-device-status'>
+          <span class='dot ${device.status === 'online' ? 'online' : 'offline'}'></span>
+          ${device.status === 'online' ? 'Online' : 'Offline'}
+        </span>
+      </div>
+      ${device.description ? `<p class='muted' style='margin:0;font-size:12px'>${esc(device.description)}</p>` : ''}
+      <div class='iot-device-actions'>
+        <button class='btn secondary device-check-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px'>⟳ Revalidar</button>
+        <button class='btn secondary device-connect-btn' data-id='${device.id}' data-host='${esc(device.ip_address)}' data-port='${device.port}' data-user='${esc(device.username || "root")}' data-auth='${esc(device.auth_method || "password")}' data-key='${esc(device.private_key || "")}' style='font-size:11px;padding:6px 10px'>⌨ SSH</button>
+        <button class='btn secondary device-edit-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px;background:linear-gradient(90deg, #f2b34b, #e0a035)'>✎</button>
+        <button class='btn secondary device-delete-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px;background:linear-gradient(90deg, #ff6b81, #ff3d57)'>✕</button>
+      </div>
+    </div>`).join("");
 
-  const port = parseInt(sshPort.value, 10) || 22;
-  const username = sshUser.value.trim() || "root";
-  const password = sshPassword.value;
-  const private_key = sshPrivateKey.value;
-  const command = sshCommand.value.trim();
-  const key_type = sshAuthMethod.value;
-
-  // If a command was provided, use the one-shot HTTP mode (existing behavior)
-  if (command) {
-    setSshResult(`Conectando a ${username}@${host}:${port}...`);
-
-    const body = { host, port, username, password, private_key, command, key_type };
-
-    try {
-      const res = await fetch("/api/iot/ssh/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-
-      if (data.connected) {
-        const lines = [
-          `✅ Conectado a ${data.username}@${data.host}:${data.port}`,
-          "",
-          data.output,
-        ];
-        setSshResult(lines.join("\n"));
-      } else {
-        setSshResult(`❌ Falha na conexão:\n${data.error}`, true);
+  // Bind connect buttons - open SSH terminal directly
+  devicesCards.querySelectorAll(".device-connect-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const host = btn.getAttribute("data-host");
+      const port = parseInt(btn.getAttribute("data-port"), 10);
+      const user = btn.getAttribute("data-user");
+      const auth = btn.getAttribute("data-auth");
+      const key = btn.getAttribute("data-key");
+      const deviceId = btn.getAttribute("data-id");
+      
+      // If using password auth and no key is provided, fetch credentials from backend
+      let password = "";
+      let finalKey = key;
+      let finalAuth = auth;
+      
+      if ((auth === "password" || !key) && deviceId) {
+        try {
+          const res = await fetch(`/api/iot/devices/${deviceId}/credentials`);
+          if (res.ok) {
+            const data = await res.json();
+            password = data.password || "";
+            finalKey = data.private_key || key;
+            finalAuth = data.auth_method || auth;
+            // Update display info
+            if (sshTerminalInfo) sshTerminalInfo.textContent = `Conectado: ${data.username || user}@${data.host || host}:${port}`;
+          }
+        } catch (err) {
+          console.warn("Failed to fetch device credentials:", err);
+        }
       }
-    } catch (err) {
-      setSshResult(`❌ Erro de rede: ${err.message}`, true);
-    }
+      
+      openIoTTerminal(host, port, user, password, finalKey, finalAuth, deviceId);
+    });
+  });
+
+  devicesCards.querySelectorAll(".device-edit-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const deviceId = btn.getAttribute("data-id");
+      const device = devices.find(d => String(d.id) === deviceId);
+      if (device) openDeviceModal(device);
+    });
+  });
+
+  devicesCards.querySelectorAll(".device-delete-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const deviceId = btn.getAttribute("data-id");
+      if (confirm("Tem certeza que deseja excluir este periférico?")) {
+        try {
+          const res = await fetch(`/api/iot/devices/${deviceId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (res.ok) await loadIoTDevices();
+          else alert(`Erro ao excluir: ${data.detail || data.error}`);
+        } catch (err) { alert(`Erro: ${err.message}`); }
+      }
+    });
+  });
+}
+
+function openDeviceModal(device = null) {
+  editingDeviceId = device?.id || null;
+  deviceModalTitle.textContent = device ? "Editar Periférico" : "Adicionar Periférico";
+  if (device) {
+    deviceName.value = device.name || "";
+    deviceDescription.value = device.description || "";
+    deviceIp.value = device.ip_address || "";
+    devicePort.value = device.port || 22;
+    deviceUsername.value = device.username || "root";
+    deviceAuthMethod.value = device.auth_method || "password";
+    devicePassword.value = "";
+    devicePrivateKey.value = device.private_key || "";
+  } else {
+    deviceName.value = "";
+    deviceDescription.value = "";
+    deviceIp.value = "";
+    devicePort.value = "22";
+    deviceUsername.value = "root";
+    deviceAuthMethod.value = "password";
+    devicePassword.value = "";
+    devicePrivateKey.value = "";
+  }
+  toggleDeviceAuthMethod();
+  deviceModalResult.style.display = "none";
+  deviceModal.style.display = "";
+}
+
+function closeDeviceModal() { deviceModal.style.display = "none"; editingDeviceId = null; }
+
+async function saveDevice() {
+  const payload = {
+    name: deviceName.value.trim(),
+    description: deviceDescription.value.trim(),
+    ip_address: deviceIp.value.trim(),
+    port: parseInt(devicePort.value, 10) || 22,
+    username: deviceUsername.value.trim() || "root",
+    auth_method: deviceAuthMethod.value,
+    private_key: devicePrivateKey.value,
+  };
+  
+  // Only include password if it's provided (for updates) or if it's a new device
+  if (devicePassword.value) {
+    payload.password = devicePassword.value;
+  } else if (!editingDeviceId) {
+    payload.password = "";
+  }
+  if (!payload.name || !payload.ip_address) {
+    deviceModalResult.style.display = "";
+    deviceModalResult.textContent = "Nome e IP são obrigatórios.";
+    deviceModalResult.style.color = "var(--red)";
     return;
   }
+  try {
+    let res;
+    if (editingDeviceId) {
+      res = await fetch(`/api/iot/devices/${editingDeviceId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    } else {
+      res = await fetch("/api/iot/devices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    }
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.detail || result.error || "Erro ao salvar");
+    closeDeviceModal();
+    await loadIoTDevices();
+  } catch (err) {
+    deviceModalResult.style.display = "";
+    deviceModalResult.textContent = `❌ ${err.message}`;
+    deviceModalResult.style.color = "var(--red)";
+  }
+}
 
-  // No command → open interactive WebSocket terminal
-  closeInteractiveTerminal();
-  openInteractiveTerminal(host, port, username, password, private_key, key_type);
-});
+// Test SSH connection for device registration
+async function testDeviceConnection() {
+  const host = deviceIp.value.trim();
+  const port = parseInt(devicePort.value, 10) || 22;
+  const username = deviceUsername.value.trim() || "root";
+  const password = devicePassword.value;
+  const privateKey = devicePrivateKey.value;
+  const keyType = deviceAuthMethod.value;
+  if (!host) {
+    deviceModalResult.style.display = "";
+    deviceModalResult.textContent = "Informe o IP para testar conexão.";
+    deviceModalResult.style.color = "var(--red)";
+    return;
+  }
+  deviceModalResult.style.display = "";
+  deviceModalResult.textContent = "Testando conexão...";
+  deviceModalResult.style.color = "var(--ink)";
+  try {
+    const res = await fetch("/api/iot/ssh/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host, port, username, password, private_key: privateKey, command: "echo 'SSH Test OK'", key_type: keyType }),
+    });
+    const data = await res.json();
+    if (data.connected) {
+      deviceModalResult.textContent = `✅ Conexão bem-sucedida: ${data.username}@${data.host}:${data.port}`;
+      deviceModalResult.style.color = "var(--green)";
+    } else {
+      deviceModalResult.textContent = `❌ Falha na conexão: ${data.error}`;
+      deviceModalResult.style.color = "var(--red)";
+    }
+  } catch (err) {
+    deviceModalResult.textContent = `❌ Erro: ${err.message}`;
+    deviceModalResult.style.color = "var(--red)";
+  }
+}
 
-sshTerminalDisconnect.addEventListener("click", () => {
-  closeInteractiveTerminal();
-});
+// Close terminal on disconnect button
+document.getElementById("ssh-terminal-disconnect")?.addEventListener("click", closeIoTTerminal);
 
-sshClearBtn.addEventListener("click", () => {
-  closeInteractiveTerminal();
-  sshHost.value = "";
-  sshPort.value = "22";
-  sshUser.value = "root";
-  sshPassword.value = "";
-  sshPrivateKey.value = "";
-  sshCommand.value = "";
-  sshAuthMethod.value = "password";
-  toggleSshAuthMethod();
-  setSshResult('Pronto para conectar. Insira o IP do dispositivo e clique em "Conectar SSH".');
-});
-
-document.getElementById("refresh-status").addEventListener("click", () => {
-  loadStatus();
-  loadModels();
-  loadPersonas();
-});
-document.getElementById("send-chat").addEventListener("click", sendChat);
-document.getElementById("send-n8n-chat").addEventListener("click", sendChatViaFlow);
-document.getElementById("attach-knowledge").addEventListener("click", attachKnowledge);
-document.getElementById("attach-knowledge-flow").addEventListener("click", sendKnowledgeViaFlow);
-
-chatInput.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter" && !ev.shiftKey) {
-    ev.preventDefault();
-    sendChat();
+// Revalidate IoT device status
+devicesCards?.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".device-check-btn");
+  if (!btn) return;
+  const deviceId = btn.getAttribute("data-id");
+  if (!deviceId) return;
+  btn.disabled = true;
+  const prevText = btn.textContent;
+  btn.textContent = "Verificando...";
+  try {
+    const res = await fetch(`/api/iot/devices/${deviceId}/check-status`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || res.status);
+    btn.textContent = data.online ? "Online" : "Offline";
+    btn.style.background = data.online
+      ? "linear-gradient(90deg, #35d0a5, #29b892)"
+      : "linear-gradient(90deg, #ff6b81, #ff3d57)";
+    setTimeout(() => {
+      btn.textContent = prevText;
+      btn.style.background = "";
+      loadIoTDevices();
+    }, 1200);
+  } catch (err) {
+    alert(`Erro ao verificar status: ${err.message}`);
+    btn.textContent = prevText;
+    btn.style.background = "";
+  } finally {
+    btn.disabled = false;
   }
 });
+
+// Modal event bindings
+if (addDeviceBtn) addDeviceBtn.addEventListener("click", () => openDeviceModal());
+if (deviceModalClose) deviceModalClose.addEventListener("click", closeDeviceModal);
+if (deviceModalCancel) deviceModalCancel.addEventListener("click", closeDeviceModal);
+if (deviceModalSave) deviceModalSave.addEventListener("click", saveDevice);
+if (deviceModalTest) deviceModalTest.addEventListener("click", testDeviceConnection);
+
+// Close modal on overlay click
+if (deviceModal) {
+  deviceModal.addEventListener("click", (e) => { if (e.target === deviceModal) closeDeviceModal(); });
+}
+
+// Initialize
+document.getElementById("refresh-status")?.addEventListener("click", () => { loadStatus(); loadModels(); loadPersonas(); });
+document.getElementById("send-chat")?.addEventListener("click", sendChat);
+document.getElementById("send-n8n-chat")?.addEventListener("click", sendChatViaFlow);
+document.getElementById("attach-knowledge")?.addEventListener("click", attachKnowledge);
+document.getElementById("attach-knowledge-flow")?.addEventListener("click", sendKnowledgeViaFlow);
+chatInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendChat(); } });
 
 bindMenu();
 bindSearch();
@@ -1091,4 +1051,5 @@ loadStatus();
 loadModels();
 loadPersonas();
 renderChat();
+loadIoTDevices();
 setInterval(loadStatus, 20000);

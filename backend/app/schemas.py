@@ -67,3 +67,39 @@ class SshConnectResponse(BaseModel):
     username: str
     output: str = ""
     error: str = ""
+
+
+# ===== IoT Device Schemas =====
+
+class IoTDeviceBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    ip_address: str = Field(..., min_length=1, max_length=45)
+    port: int = Field(default=22, ge=1, le=65535)
+    username: str = Field(default="root", max_length=255)
+    description: str = ""
+    auth_method: str = Field(default="password", pattern="^(password|key)$")
+    password: str = ""
+    private_key: str = ""
+
+
+class IoTDeviceCreate(IoTDeviceBase):
+    pass
+
+
+class IoTDeviceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    ip_address: Optional[str] = Field(None, min_length=1, max_length=45)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = None
+    auth_method: Optional[str] = Field(None, pattern="^(password|key)$")
+    private_key: Optional[str] = None
+    password: Optional[str] = None
+
+
+class IoTDeviceResponse(IoTDeviceBase):
+    id: int
+    status: str = "disconnected"
+    last_connection: Optional[str] = None
+    created_at: str
+    updated_at: str

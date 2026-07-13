@@ -130,35 +130,14 @@ general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/LITELLM_DATABASE_URL
   otel: false
-  max_request_size_mb: 20
-  max_response_size_mb: 20
   alerting: []
-  allowed_routes:
-    # v1 endpoints
-    - /chat/completions
-    - /models
-    - /model/info
-    - /model/new
-    - /model/metrics
-    - /health
-    - /health/liveliness
-    - /health/readiness
-    - /health/test_connection
-    # v2 endpoints (needed for API key model registration and connection tests)
-    - /v2/model/info
-    - /v2/model/new
-    - /v2/chat/completions
-    - /v2/embeddings
-    - /v2/health/test_connection
-    - /v2/routes
-    - /v2/key/generate
-    - /v2/key/info
-    - /routes
-    - /key/generate
-    - /key/info
-    - /spend/logs
-    - /spend/keys
-    - /global/spend/logs
+  # Removidas: allowed_routes, max_request_size_mb, max_response_size_mb
+  # Sao recursos Enterprise do LiteLLM (exigem LITELLM_LICENSE) e, sem
+  # licenca, causavam 403 em rotas como /v1/models mesmo sendo legitimas.
+  # A restricao de acesso ao proxy agora e feita na camada de rede:
+  # a porta do litellm no docker-compose.yml esta bindada em 127.0.0.1
+  # (nao exposta na LAN), e o acesso "normal" do stack e via rede interna
+  # (ai_net), atraves do python-webapp/n8n/open-webui.
 
 router_settings:
   routing_strategy: "latency-based-routing"

@@ -44,6 +44,7 @@ LITELLM_URL = env("LITELLM_URL", "http://litellm:4000")
 PUBLIC_LITELLM = env("PUBLIC_LITELLM", "http://localhost:4000")
 
 # Database services
+POSTGRES_HOST = env("POSTGRES_HOST", "postgres")
 POSTGRES_URL = env("POSTGRES_URL", "http://postgres:5432")
 PUBLIC_POSTGRES = env("PUBLIC_POSTGRES", "http://localhost:5433")
 REDIS_URL = env("REDIS_URL", "http://redis:6379")
