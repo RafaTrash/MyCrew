@@ -406,6 +406,7 @@ services:
       - "--yes-always"
       - "frontend/index.html"
       - "frontend/app.js"
+      - "app.js"
     working_dir: /repo
     volumes:
       - ./:/repo

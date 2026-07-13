@@ -9,8 +9,6 @@ Descricao (tipo no doc abaixo) e prompt
 
 ex:
 
-
-
 Nome: Boris
 Tipo: Agente supervisor e orquestrador geral.
 
