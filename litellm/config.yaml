@@ -130,7 +130,6 @@ general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/LITELLM_DATABASE_URL
   otel: false
-  custom_auth: false
   max_request_size_mb: 20
   max_response_size_mb: 20
   alerting: []

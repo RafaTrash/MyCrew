@@ -1,0 +1,246 @@
+<svg width="1760" height="1500" viewBox="0 0 1760 1500" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0 0 L6 3 L0 6 Z" fill="#5f8b83"/>
+  </marker>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+    <path d="M36 0 H0 V36" fill="none" stroke="#0e2a26" stroke-width="1"/>
+  </pattern>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur stdDeviation="3" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+<symbol id="icon-docker" viewBox="0 0 24 24">
+  <rect x="2" y="11" width="4.5" height="4.5"/>
+  <rect x="7.5" y="11" width="4.5" height="4.5"/>
+  <rect x="13" y="11" width="4.5" height="4.5"/>
+  <rect x="7.5" y="5.5" width="4.5" height="4.5"/>
+  <path d="M1 16.5 Q11 21.5 22 15.5" fill="none"/>
+</symbol><symbol id="icon-traefik" viewBox="0 0 24 24">
+  <path d="M2 12 H8" fill="none"/>
+  <path d="M16 12 H22" fill="none"/>
+  <path d="M8 4 L16.5 12 L8 20" fill="none"/>
+</symbol><symbol id="icon-litellm" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="9.5" fill="none"/>
+  <path d="M13 4.5 L7.5 13 H11 L9.5 19.5 L17 10.5 H12.5 Z"/>
+</symbol><symbol id="icon-ollama" viewBox="0 0 24 24">
+  <polygon points="12,2 20,7 20,17 12,22 4,17 4,7" fill="none"/>
+  <circle cx="12" cy="12" r="2.3"/>
+</symbol><symbol id="icon-openrouter" viewBox="0 0 24 24">
+  <path d="M3 12 H9" fill="none"/>
+  <path d="M9 12 L15.5 5" fill="none"/>
+  <path d="M9 12 L15.5 19" fill="none"/>
+  <path d="M15.5 5 H21" fill="none"/>
+  <path d="M15.5 19 H21" fill="none"/>
+</symbol><symbol id="icon-openai" viewBox="0 0 24 24">
+  <circle cx="12" cy="4.5" r="2"/>
+  <circle cx="4" cy="18" r="2"/>
+  <circle cx="20" cy="18" r="2"/>
+  <path d="M12 6.5 L4 16.3" fill="none"/>
+  <path d="M12 6.5 L20 16.3" fill="none"/>
+  <path d="M6 18 H18" fill="none"/>
+</symbol><symbol id="icon-postgresql" viewBox="0 0 24 24">
+  <ellipse cx="12" cy="5.5" rx="8" ry="3" fill="none"/>
+  <path d="M4 5.5 V18.5 A8 3 0 0 0 20 18.5 V5.5" fill="none"/>
+  <path d="M4 12 A8 3 0 0 0 20 12" fill="none"/>
+</symbol><symbol id="icon-redis" viewBox="0 0 24 24">
+  <path d="M12 3 L21 7 L12 11 L3 7 Z" fill="none"/>
+  <path d="M3 12.3 L12 16.3 L21 12.3" fill="none"/>
+  <path d="M3 17.3 L12 21.3 L21 17.3" fill="none"/>
+</symbol><symbol id="icon-qdrant" viewBox="0 0 24 24">
+  <circle cx="5" cy="5" r="1.8"/>
+  <circle cx="19" cy="5" r="1.8"/>
+  <circle cx="12" cy="12.5" r="1.8"/>
+  <circle cx="5" cy="20" r="1.8"/>
+  <circle cx="19" cy="20" r="1.8"/>
+  <path d="M5 5 L12 12.5 L19 5 M5 20 L12 12.5 L19 20" fill="none"/>
+</symbol><symbol id="icon-openwebui" viewBox="0 0 24 24">
+  <path d="M3 4.5 H21 V15.5 H9.5 L4.5 20 V15.5 H3 Z" fill="none"/>
+  <circle cx="8" cy="10" r="1"/><circle cx="12" cy="10" r="1"/><circle cx="16" cy="10" r="1"/>
+</symbol><symbol id="icon-fastapi" viewBox="0 0 24 24">
+  <path d="M13.5 2.5 L4.5 14 H11 L9 21.5 L19.5 9.5 H13 Z" fill="none"/>
+</symbol><symbol id="icon-nginx" viewBox="0 0 24 24">
+  <rect x="3" y="4" width="18" height="4" rx="1" fill="none"/>
+  <rect x="3" y="10" width="18" height="4" rx="1" fill="none"/>
+  <rect x="3" y="16" width="18" height="4" rx="1" fill="none"/>
+  <circle cx="6.2" cy="6" r="0.7"/><circle cx="6.2" cy="12" r="0.7"/><circle cx="6.2" cy="18" r="0.7"/>
+</symbol><symbol id="icon-n8n" viewBox="0 0 24 24">
+  <circle cx="4.5" cy="6" r="2"/>
+  <circle cx="19.5" cy="6" r="2"/>
+  <circle cx="12" cy="18.5" r="2"/>
+  <path d="M6.3 6 H17.7" fill="none"/>
+  <path d="M5.6 7.8 L11 16.7" fill="none"/>
+  <path d="M18.4 7.8 L13 16.7" fill="none"/>
+</symbol><symbol id="icon-portainer" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="3.6" fill="none"/>
+  <path d="M12 2.5 V5.5 M12 18.5 V21.5 M2.5 12 H5.5 M18.5 12 H21.5
+           M5.1 5.1 L7.2 7.2 M16.8 16.8 L18.9 18.9
+           M5.1 18.9 L7.2 16.8 M16.8 7.2 L18.9 5.1" fill="none"/>
+</symbol><symbol id="icon-dozzle" viewBox="0 0 24 24">
+  <rect x="2" y="3.5" width="20" height="17" rx="1.6" fill="none"/>
+  <path d="M6 9 L10 12 L6 15" fill="none"/>
+  <path d="M12.5 15 H18" fill="none"/>
+</symbol><symbol id="icon-uptimekuma" viewBox="0 0 24 24">
+  <path d="M2 12.5 H7 L9 6 L13.5 19 L16 12.5 H22" fill="none"/>
+</symbol><symbol id="icon-watchtower" viewBox="0 0 24 24">
+  <path d="M2 12 C6 5 18 5 22 12 C18 19 6 19 2 12 Z" fill="none"/>
+  <circle cx="12" cy="12" r="3"/>
+</symbol></defs>
+<rect x="0" y="0" width="1760" height="1500" fill="#05080a"/><rect x="0" y="0" width="1760" height="1500" fill="url(#grid)"/><rect x="24" y="24" width="1712" height="1452" fill="none" stroke="#123331" stroke-width="1"/><path d="M50 24 L24 24 L24 50" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1710 24 L1736 24 L1736 50" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M50 1476 L24 1476 L24 1450" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1710 1476 L1736 1476 L1736 1450" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/><text x="60" y="74" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="24" font-weight="700" fill="#d8fff2" text-anchor="start" letter-spacing="2">MYCREW://AI_LOCAL_STACK</text><text x="60" y="96" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="12" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1.5">SYSTEM ARCHITECTURE — SELF-HOSTED MULTI-AGENT PLATFORM</text><text x="1700" y="74" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="12" font-weight="700" fill="#39ff14" text-anchor="end" letter-spacing="1.5">STATUS: ONLINE</text><text x="1700" y="92" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="end" letter-spacing="1">NODES: 17  //  MODE: LOCAL+CLOUD</text><circle cx="1556" cy="70" r="4" fill="#39ff14"><animate attributeName="opacity" values="1;0.2;1" dur="1.6s" repeatCount="indefinite"/></circle><line x1="60" y1="112" x2="1700" y2="112" stroke="#123331" stroke-width="1"/><rect x="810.0" y="140" width="140" height="40" fill="none" stroke="#5f8b83" stroke-width="1.4" stroke-dasharray="3 3"/><text x="880.0" y="165" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="13" font-weight="700" fill="#d8fff2" text-anchor="middle" letter-spacing="2">INTERNET</text><rect x="730.0" y="230" width="300" height="62" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ff9d00" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M742.0 230 L730.0 230 L730.0 242" stroke="#ff9d00" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1018.0 230 L1030.0 230 L1030.0 242" stroke="#ff9d00" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M742.0 292 L730.0 292 L730.0 280" stroke="#ff9d00" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1018.0 292 L1030.0 292 L1030.0 280" stroke="#ff9d00" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-traefik" x="746.0" y="248.0" width="26" height="26" stroke="#ff9d00" stroke-width="1.4" fill="#ff9d00"/>
+<text x="786.0" y="257.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">TRAEFIK</text>
+<text x="786.0" y="276.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">REVERSE PROXY / EDGE ROUTER</text>
+<rect x="972.0" y="238" width="50" height="16" fill="#ff9d00" fill-opacity="0.12" stroke="#ff9d00" stroke-opacity="0.6" stroke-width="1"/>
+<text x="997.0" y="249.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ff9d00" text-anchor="middle" letter-spacing="1">EDGE</text><path d="M880.0 180 L880.0 205.0 L880.0 205.0 L880.0 230" stroke="#5f8b83" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="370.0" y="350" width="300" height="74" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#00d9ff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M382.0 350 L370.0 350 L370.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M658.0 350 L670.0 350 L670.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M382.0 424 L370.0 424 L370.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M658.0 424 L670.0 424 L670.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-nginx" x="386.0" y="374.0" width="26" height="26" stroke="#00d9ff" stroke-width="1.4" fill="#00d9ff"/>
+<text x="426.0" y="383.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">NGINX</text>
+<text x="426.0" y="402.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">MYCREW FRONTEND / STATIC UI</text>
+<rect x="621.0" y="358" width="41" height="16" fill="#00d9ff" fill-opacity="0.12" stroke="#00d9ff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="641.5" y="369.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#00d9ff" text-anchor="middle" letter-spacing="1">APP</text><path d="M880.0 292 L880.0 321.0 L520.0 321.0 L520.0 350" stroke="#ff9d00" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="730.0" y="350" width="300" height="74" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#00d9ff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M742.0 350 L730.0 350 L730.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1018.0 350 L1030.0 350 L1030.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M742.0 424 L730.0 424 L730.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1018.0 424 L1030.0 424 L1030.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-fastapi" x="746.0" y="374.0" width="26" height="26" stroke="#00d9ff" stroke-width="1.4" fill="#00d9ff"/>
+<text x="786.0" y="383.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">FASTAPI</text>
+<text x="786.0" y="402.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">BACKEND API / ORCHESTRATION</text>
+<rect x="981.0" y="358" width="41" height="16" fill="#00d9ff" fill-opacity="0.12" stroke="#00d9ff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1001.5" y="369.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#00d9ff" text-anchor="middle" letter-spacing="1">APP</text><path d="M880.0 292 L880.0 321.0 L880.0 321.0 L880.0 350" stroke="#ff9d00" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="1090.0" y="350" width="300" height="74" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#00d9ff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M1102.0 350 L1090.0 350 L1090.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1378.0 350 L1390.0 350 L1390.0 362" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1102.0 424 L1090.0 424 L1090.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1378.0 424 L1390.0 424 L1390.0 412" stroke="#00d9ff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-openwebui" x="1106.0" y="374.0" width="26" height="26" stroke="#00d9ff" stroke-width="1.4" fill="#00d9ff"/>
+<text x="1146.0" y="383.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">OPEN WEBUI</text>
+<text x="1146.0" y="402.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">MODEL &amp; AGENT MANAGER</text>
+<rect x="1341.0" y="358" width="41" height="16" fill="#00d9ff" fill-opacity="0.12" stroke="#00d9ff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1361.5" y="369.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#00d9ff" text-anchor="middle" letter-spacing="1">APP</text><path d="M880.0 292 L880.0 321.0 L1240.0 321.0 L1240.0 350" stroke="#ff9d00" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><path d="M670.0 387.0 L730.0 387.0" stroke="#00d9ff" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><path d="M1030.0 387.0 L1090.0 387.0" stroke="#00d9ff" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><rect x="720.0" y="470" width="320" height="66" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#39ff14" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M732.0 470 L720.0 470 L720.0 482" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1028.0 470 L1040.0 470 L1040.0 482" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M732.0 536 L720.0 536 L720.0 524" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1028.0 536 L1040.0 536 L1040.0 524" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-litellm" x="736.0" y="490.0" width="26" height="26" stroke="#39ff14" stroke-width="1.4" fill="#39ff14"/>
+<text x="776.0" y="499.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">LITELLM</text>
+<text x="776.0" y="518.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">UNIFIED AI GATEWAY / ROUTER</text>
+<rect x="955.0" y="478" width="77" height="16" fill="#39ff14" fill-opacity="0.12" stroke="#39ff14" stroke-opacity="0.6" stroke-width="1"/>
+<text x="993.5" y="489.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#39ff14" text-anchor="middle" letter-spacing="1">GATEWAY</text><path d="M880.0 424 L880.0 447.0 L840.0 447.0 L840.0 470" stroke="#00d9ff" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><path d="M1240.0 424 L1240.0 447.0 L920.0 447.0 L920.0 470" stroke="#00d9ff" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="465.0" y="590" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#39ff14" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M477.0 590 L465.0 590 L465.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 590 L715.0 590 L715.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M477.0 660 L465.0 660 L465.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 660 L715.0 660 L715.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-ollama" x="481.0" y="613.0" width="24" height="24" stroke="#39ff14" stroke-width="1.4" fill="#39ff14"/>
+<text x="519.0" y="621.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">OLLAMA</text>
+<text x="519.0" y="640.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">LOCAL MODELS + EMBEDDINGS</text>
+<rect x="648.0" y="598" width="59" height="16" fill="#39ff14" fill-opacity="0.12" stroke="#39ff14" stroke-opacity="0.6" stroke-width="1"/>
+<text x="677.5" y="609.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#39ff14" text-anchor="middle" letter-spacing="1">LOCAL</text><path d="M880.0 536 L880.0 563.0 L590.0 563.0 L590.0 590" stroke="#39ff14" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="755.0" y="590" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#39ff14" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M767.0 590 L755.0 590 L755.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M993.0 590 L1005.0 590 L1005.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M767.0 660 L755.0 660 L755.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M993.0 660 L1005.0 660 L1005.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-openrouter" x="771.0" y="613.0" width="24" height="24" stroke="#39ff14" stroke-width="1.4" fill="#39ff14"/>
+<text x="809.0" y="621.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">OPENROUTER</text>
+<text x="809.0" y="640.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">MULTI-CLOUD ROUTING</text>
+<rect x="938.0" y="598" width="59" height="16" fill="#39ff14" fill-opacity="0.12" stroke="#39ff14" stroke-opacity="0.6" stroke-width="1"/>
+<text x="967.5" y="609.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#39ff14" text-anchor="middle" letter-spacing="1">CLOUD</text><path d="M880.0 536 L880.0 563.0 L880.0 563.0 L880.0 590" stroke="#39ff14" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="1045.0" y="590" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#39ff14" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M1057.0 590 L1045.0 590 L1045.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1283.0 590 L1295.0 590 L1295.0 602" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1057.0 660 L1045.0 660 L1045.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1283.0 660 L1295.0 660 L1295.0 648" stroke="#39ff14" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-openai" x="1061.0" y="613.0" width="24" height="24" stroke="#39ff14" stroke-width="1.4" fill="#39ff14"/>
+<text x="1099.0" y="621.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">OPENAI</text>
+<text x="1099.0" y="640.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">GPT MODEL FAMILY</text>
+<rect x="1228.0" y="598" width="59" height="16" fill="#39ff14" fill-opacity="0.12" stroke="#39ff14" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1257.5" y="609.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#39ff14" text-anchor="middle" letter-spacing="1">CLOUD</text><path d="M880.0 536 L880.0 563.0 L1170.0 563.0 L1170.0 590" stroke="#39ff14" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="465.0" y="720" width="250" height="66" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#c14dff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M477.0 720 L465.0 720 L465.0 732" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 720 L715.0 720 L715.0 732" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M477.0 786 L465.0 786 L465.0 774" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 786 L715.0 786 L715.0 774" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-qdrant" x="481.0" y="741.0" width="24" height="24" stroke="#c14dff" stroke-width="1.4" fill="#c14dff"/>
+<text x="519.0" y="749.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">QDRANT</text>
+<text x="519.0" y="768.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">VECTOR MEMORY STORE</text>
+<rect x="657.0" y="728" width="50" height="16" fill="#c14dff" fill-opacity="0.12" stroke="#c14dff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="682.0" y="739.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#c14dff" text-anchor="middle" letter-spacing="1">DATA</text><rect x="465.0" y="810" width="250" height="66" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#c14dff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M477.0 810 L465.0 810 L465.0 822" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 810 L715.0 810 L715.0 822" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M477.0 876 L465.0 876 L465.0 864" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 876 L715.0 876 L715.0 864" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-postgresql" x="481.0" y="831.0" width="24" height="24" stroke="#c14dff" stroke-width="1.4" fill="#c14dff"/>
+<text x="519.0" y="839.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">POSTGRESQL</text>
+<text x="519.0" y="858.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">USERS / AGENTS / CHATS</text>
+<rect x="657.0" y="818" width="50" height="16" fill="#c14dff" fill-opacity="0.12" stroke="#c14dff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="682.0" y="829.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#c14dff" text-anchor="middle" letter-spacing="1">DATA</text><rect x="465.0" y="900" width="250" height="66" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#c14dff" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M477.0 900 L465.0 900 L465.0 912" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 900 L715.0 900 L715.0 912" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M477.0 966 L465.0 966 L465.0 954" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M703.0 966 L715.0 966 L715.0 954" stroke="#c14dff" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-redis" x="481.0" y="921.0" width="24" height="24" stroke="#c14dff" stroke-width="1.4" fill="#c14dff"/>
+<text x="519.0" y="929.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">REDIS</text>
+<text x="519.0" y="948.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">CACHE / QUEUE</text>
+<rect x="657.0" y="908" width="50" height="16" fill="#c14dff" fill-opacity="0.12" stroke="#c14dff" stroke-opacity="0.6" stroke-width="1"/>
+<text x="682.0" y="919.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#c14dff" text-anchor="middle" letter-spacing="1">DATA</text><path d="M590.0 660 L590.0 720" stroke="#c14dff" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><path d="M590.0 786 L590.0 810" stroke="#c14dff" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><path d="M590.0 876 L590.0 900" stroke="#c14dff" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="1480.0" y="590" width="230" height="66" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ff4d8d" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M1492.0 590 L1480.0 590 L1480.0 602" stroke="#ff4d8d" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1698.0 590 L1710.0 590 L1710.0 602" stroke="#ff4d8d" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1492.0 656 L1480.0 656 L1480.0 644" stroke="#ff4d8d" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1698.0 656 L1710.0 656 L1710.0 644" stroke="#ff4d8d" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-n8n" x="1496.0" y="611.0" width="24" height="24" stroke="#ff4d8d" stroke-width="1.4" fill="#ff4d8d"/>
+<text x="1534.0" y="619.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">N8N</text>
+<text x="1534.0" y="638.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">WORKFLOW ORCHESTRATION</text>
+<rect x="1652.0" y="598" width="50" height="16" fill="#ff4d8d" fill-opacity="0.12" stroke="#ff4d8d" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1677.0" y="609.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ff4d8d" text-anchor="middle" letter-spacing="1">FLOW</text><path d="M880.0 424 L880.0 507.0 L1595.0 507.0 L1595.0 590" stroke="#ff4d8d" stroke-width="1.6" fill="none" stroke-dasharray="4 3" marker-end="url(#arrow)" stroke-opacity="0.8"/><text x="1595.0" y="580" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10" font-weight="400" fill="#ff4d8d" text-anchor="middle" letter-spacing="1.5">webhooks</text><line x1="60" y1="1010" x2="1700" y2="1010" stroke="#123331" stroke-width="1"/><text x="60" y="1044" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="15" font-weight="700" fill="#d8fff2" text-anchor="start" letter-spacing="2">INFRASTRUCTURE // OBSERVABILITY</text><text x="60" y="1064" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1.5">container lifecycle, logs, uptime &amp; automated updates</text><rect x="251.0" y="1100" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ffb347" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M263.0 1100 L251.0 1100 L251.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M489.0 1100 L501.0 1100 L501.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M263.0 1170 L251.0 1170 L251.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M489.0 1170 L501.0 1170 L501.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-portainer" x="267.0" y="1123.0" width="24" height="24" stroke="#ffb347" stroke-width="1.4" fill="#ffb347"/>
+<text x="305.0" y="1131.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">PORTAINER</text>
+<text x="305.0" y="1150.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">CONTAINER MANAGEMENT UI</text>
+<rect x="434.0" y="1108" width="59" height="16" fill="#ffb347" fill-opacity="0.12" stroke="#ffb347" stroke-opacity="0.6" stroke-width="1"/>
+<text x="463.5" y="1119.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ffb347" text-anchor="middle" letter-spacing="1">INFRA</text><rect x="547.0" y="1100" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ffb347" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M559.0 1100 L547.0 1100 L547.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M785.0 1100 L797.0 1100 L797.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M559.0 1170 L547.0 1170 L547.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M785.0 1170 L797.0 1170 L797.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-dozzle" x="563.0" y="1123.0" width="24" height="24" stroke="#ffb347" stroke-width="1.4" fill="#ffb347"/>
+<text x="601.0" y="1131.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">DOZZLE</text>
+<text x="601.0" y="1150.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">REALTIME LOG VIEWER</text>
+<rect x="730.0" y="1108" width="59" height="16" fill="#ffb347" fill-opacity="0.12" stroke="#ffb347" stroke-opacity="0.6" stroke-width="1"/>
+<text x="759.5" y="1119.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ffb347" text-anchor="middle" letter-spacing="1">INFRA</text><rect x="843.0" y="1100" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ffb347" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M855.0 1100 L843.0 1100 L843.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1081.0 1100 L1093.0 1100 L1093.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M855.0 1170 L843.0 1170 L843.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1081.0 1170 L1093.0 1170 L1093.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-uptimekuma" x="859.0" y="1123.0" width="24" height="24" stroke="#ffb347" stroke-width="1.4" fill="#ffb347"/>
+<text x="897.0" y="1131.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">UPTIME KUMA</text>
+<text x="897.0" y="1150.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">AVAILABILITY MONITORING</text>
+<rect x="1026.0" y="1108" width="59" height="16" fill="#ffb347" fill-opacity="0.12" stroke="#ffb347" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1055.5" y="1119.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ffb347" text-anchor="middle" letter-spacing="1">INFRA</text><rect x="1139.0" y="1100" width="250" height="70" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ffb347" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M1151.0 1100 L1139.0 1100 L1139.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1377.0 1100 L1389.0 1100 L1389.0 1112" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1151.0 1170 L1139.0 1170 L1139.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1377.0 1170 L1389.0 1170 L1389.0 1158" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-watchtower" x="1155.0" y="1123.0" width="24" height="24" stroke="#ffb347" stroke-width="1.4" fill="#ffb347"/>
+<text x="1193.0" y="1131.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">WATCHTOWER</text>
+<text x="1193.0" y="1150.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">AUTO IMAGE UPDATES</text>
+<rect x="1322.0" y="1108" width="59" height="16" fill="#ffb347" fill-opacity="0.12" stroke="#ffb347" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1351.5" y="1119.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ffb347" text-anchor="middle" letter-spacing="1">INFRA</text><rect x="221.0" y="1240" width="1198" height="60" rx="3" fill="#0a1416" fill-opacity="0.9" stroke="#ffb347" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M233.0 1240 L221.0 1240 L221.0 1252" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1407.0 1240 L1419.0 1240 L1419.0 1252" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M233.0 1300 L221.0 1300 L221.0 1288" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<path d="M1407.0 1300 L1419.0 1300 L1419.0 1288" stroke="#ffb347" stroke-width="2" fill="none" stroke-linecap="square"/>
+<use href="#icon-docker" x="237.0" y="1257.0" width="26" height="26" stroke="#ffb347" stroke-width="1.4" fill="#ffb347"/>
+<text x="277.0" y="1266.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="16" font-weight="700" fill="#d8fff2" letter-spacing="0.5">DOCKER ENGINE</text>
+<text x="277.0" y="1285.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="10.5" fill="#5f8b83" letter-spacing="0.5">CONTAINER RUNTIME</text>
+<rect x="1334.0" y="1248" width="77" height="16" fill="#ffb347" fill-opacity="0.12" stroke="#ffb347" stroke-opacity="0.6" stroke-width="1"/>
+<text x="1372.5" y="1259.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="9" fill="#ffb347" text-anchor="middle" letter-spacing="1">RUNTIME</text><path d="M376.0 1170 L376.0 1205.0 L820.0 1205.0 L820.0 1240" stroke="#ffb347" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><path d="M672.0 1170 L672.0 1205.0 L820.0 1205.0 L820.0 1240" stroke="#ffb347" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><path d="M968.0 1170 L968.0 1205.0 L820.0 1205.0 L820.0 1240" stroke="#ffb347" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><path d="M1264.0 1170 L1264.0 1205.0 L820.0 1205.0 L820.0 1240" stroke="#ffb347" stroke-width="1.6" fill="none" stroke-opacity="0.8"/><path d="M376.0 1170 L376.0 1216 L820.0 1216 L820.0 1240" stroke="#ffb347" stroke-width="1.4" fill="none" stroke-opacity="0.7"/><path d="M672.0 1170 L672.0 1216 L820.0 1216 L820.0 1240" stroke="#ffb347" stroke-width="1.4" fill="none" stroke-opacity="0.7"/><path d="M968.0 1170 L968.0 1216 L820.0 1216 L820.0 1240" stroke="#ffb347" stroke-width="1.4" fill="none" stroke-opacity="0.7"/><path d="M1264.0 1170 L1264.0 1216 L820.0 1216 L820.0 1240" stroke="#ffb347" stroke-width="1.4" fill="none" stroke-opacity="0.7"/><rect x="1479.0" y="1245.0" width="140" height="50" fill="none" stroke="#39ff14" stroke-width="1.4" stroke-dasharray="3 3"/><text x="1549.0" y="1275.0" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="15" font-weight="700" fill="#39ff14" text-anchor="middle" letter-spacing="2">GPU</text><path d="M1419.0 1270.0 L1479.0 1270.0" stroke="#ffb347" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-opacity="0.8"/><rect x="60" y="1370" width="14" height="14" fill="#ff9d00" fill-opacity="0.85"/><text x="82" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">EDGE / GATEWAY</text><rect x="256" y="1370" width="14" height="14" fill="#00d9ff" fill-opacity="0.85"/><text x="278" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">APPLICATION LAYER</text><rect x="479" y="1370" width="14" height="14" fill="#39ff14" fill-opacity="0.85"/><text x="501" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">AI GATEWAY + PROVIDERS</text><rect x="747" y="1370" width="14" height="14" fill="#c14dff" fill-opacity="0.85"/><text x="769" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">DATA LAYER</text><rect x="907" y="1370" width="14" height="14" fill="#ff4d8d" fill-opacity="0.85"/><text x="929" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">AUTOMATION</text><rect x="1067" y="1370" width="14" height="14" fill="#ffb347" fill-opacity="0.85"/><text x="1089" y="1381.5" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1">INFRA / OBSERVABILITY</text><line x1="60" y1="1430" x2="1700" y2="1430" stroke="#123331" stroke-width="1"/><text x="60" y="1454" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="start" letter-spacing="1.5">MyCrew AI Local Stack — github.com/RafaTrash</text><text x="1700" y="1454" font-family="JetBrains Mono, Space Mono, Consolas, monospace" font-size="11" font-weight="400" fill="#5f8b83" text-anchor="end" letter-spacing="1.5">generated diagram — v1.0</text>
+</svg>

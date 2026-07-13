@@ -87,6 +87,10 @@
   <img src="./assets/logo.png" alt="MyCrew AI Local Stack" width="280">
 </p>
 
+<p align="center">
+  <img src="./assets/architecture.png" alt="MyCrew AI Architecture" width="560">
+</p>
+
 # MyCrew AI Local Stack
 
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)

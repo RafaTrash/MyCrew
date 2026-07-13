@@ -66,6 +66,7 @@ const linkQdrantDashboard = document.getElementById("link-qdrant-dashboard");
 const linkPortainer = document.getElementById("link-portainer");
 const linkDozzle = document.getElementById("link-dozzle");
 const linkAider = document.getElementById("link-aider");
+const linkLitellm = document.getElementById("link-litellm");
 const dozzleFrame = document.getElementById("dozzle-frame");
 
 function esc(value) {
@@ -202,6 +203,7 @@ function renderEndpoints(data) {
   }
   if (ep.portainer && linkPortainer) linkPortainer.href = ep.portainer;
   if (ep.aider && linkAider) linkAider.href = ep.aider;
+  if (ep.litellm && linkLitellm) linkLitellm.href = ep.litellm;
   // Dozzle e servido pelo nginx do frontend em /dozzle/ (mesma origem),
   // para permitir o embed via iframe sem bloqueio de X-Frame-Options.
   if (linkDozzle) linkDozzle.href = "/dozzle/";
@@ -319,6 +321,9 @@ function selectPersonaByIndex(index, jumpToChat = false) {
 async function loadStatus() {
   try {
     const res = await fetch("/api/status");
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
     const data = await res.json();
     renderKpis(data);
     renderStack(data);
@@ -379,6 +384,9 @@ async function loadPersonas() {
   personasBox.innerHTML = "<div class='model-empty'>Carregando agentes...</div>";
   try {
     const res = await fetch("/api/personas");
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
     const data = await res.json();
     state.personas = data.personas || [];
 

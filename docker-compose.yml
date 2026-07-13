@@ -76,6 +76,63 @@ services:
     networks:
       - ai_net
 
+  # ===== BANCO DE DADOS =====
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mycrew-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-litellm}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-litellm_password}
+      - POSTGRES_DB=${POSTGRES_DB:-litellm}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-litellm} -d ${POSTGRES_DB:-litellm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===== AI GATEWAY =====
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: mycrew-litellm
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-mycrew-litellm-master}
+      - LITELLM_DATABASE_URL=postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm_password}@postgres:5432/${POSTGRES_DB:-litellm}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LITELLM_MODE=PRODUCTION
+      - LITELLM_LOG=INFO
+      - LITELLM_STORE_MODEL_IN_DB=true
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+      - litellm_data:/app/data
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+    networks:
+      - ai_net
+
   # ===== FERRAMENTAS ÚTEIS =====
   
   dozzle:
@@ -179,6 +236,7 @@ services:
       - PUBLIC_PORTAINER=${PUBLIC_PORTAINER:-http://localhost:${PORTAINER_PORT:-9000}}
       - PUBLIC_UPTIME_KUMA=${PUBLIC_UPTIME_KUMA:-http://localhost:${KUMA_PORT:-3002}}
       - PUBLIC_AIDER=${PUBLIC_AIDER:-http://localhost:${AIDER_PORT:-8501}}
+      - PUBLIC_LITELLM=${PUBLIC_LITELLM:-http://localhost:${LITELLM_PORT:-4000}}
     volumes:
       - ./agents:/app/agents
     networks:
@@ -216,6 +274,10 @@ volumes:
   uptime_kuma_data:
     name: mycrew_uptime_kuma_data
     external: true
+  litellm_data:
+    name: mycrew_litellm_data
+  postgres_data:
+    name: mycrew_postgres_data
 
 networks:
   ai_net:

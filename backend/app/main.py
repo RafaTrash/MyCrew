@@ -24,6 +24,7 @@ from .config import (
     PORTAINER_URL,
     UPTIME_KUMA_URL,
     AIDER_URL,
+    LITELLM_URL,
     OLLAMA_KEEP_ALIVE,
     OLLAMA_NUM_PREDICT,
     OLLAMA_TIMEOUT,
@@ -42,6 +43,7 @@ from .config import (
     PUBLIC_PORTAINER,
     PUBLIC_UPTIME_KUMA,
     PUBLIC_AIDER,
+    PUBLIC_LITELLM,
     QDRANT_COLLECTION,
     QDRANT_TOP_K,
     QDRANT_URL,
@@ -555,6 +557,13 @@ async def status() -> dict[str, Any]:
             "internal": AIDER_URL,
             "health": f"{AIDER_URL}/_stcore/health",
         },
+        {
+            "key": "litellm",
+            "label": "LiteLLM (AI Gateway)",
+            "address": PUBLIC_LITELLM,
+            "internal": LITELLM_URL,
+            "health": f"{LITELLM_URL}/health/liveliness",
+        },
     ]
 
     health_results, models, openwebui_agents = await asyncio.gather(
@@ -588,6 +597,7 @@ async def status() -> dict[str, Any]:
             "portainer": PUBLIC_PORTAINER,
             "uptime_kuma": PUBLIC_UPTIME_KUMA,
             "aider": PUBLIC_AIDER,
+            "litellm": PUBLIC_LITELLM,
         },
         "ollama_models": models,
         "counters": {
