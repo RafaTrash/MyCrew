@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css?v=6" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" crossorigin="anonymous" />
 </head>
 <body>
   <div class="app-shell">
@@ -76,7 +77,6 @@
                   <div class="card-head">
                     <h3>Serviços da stack</h3>
                     <div class="action-group">
-                      <a id="link-qdrant-overview" class="link-btn" href="#" target="_blank" rel="noreferrer">Dashboard Qdrant ↗</a>
                       <span class="tag" id="stack-count">-</span>
                     </div>
                   </div>
@@ -217,13 +217,104 @@
               <h3>Monitoramento de Sensores</h3>
               <p class="muted">Controle e monitoramento dos sensores via Raspberry Pi</p>
             </div>
-            <!-- Add your IOTs content here -->
+
+            <!-- SSH Connection Section -->
+            <div class="ssh-section">
+              <div class="ssh-header">
+                <span class="ssh-icon">🔌</span>
+                <div>
+                  <h4>Conexão SSH para Periféricos</h4>
+                  <p class="muted">Conecte-se a dispositivos IoT via SSH para monitoramento e comandos remotos</p>
+                </div>
+              </div>
+
+              <div class="ssh-form">
+                <div class="form-row">
+                  <label class="field">
+                    <span class="field-label">Endereço IP</span>
+                    <input id="ssh-host" class="ssh-input" type="text" placeholder="192.168.1.100" />
+                  </label>
+                  <label class="field ssh-port-field">
+                    <span class="field-label">Porta</span>
+                    <input id="ssh-port" class="ssh-input" type="number" value="22" min="1" max="65535" />
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label class="field">
+                    <span class="field-label">Usuário</span>
+                    <input id="ssh-user" class="ssh-input" type="text" value="root" placeholder="root" />
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label class="field ssh-auth-field">
+                    <span class="field-label">Método de Autenticação</span>
+                    <select id="ssh-auth-method" class="ssh-input">
+                      <option value="password">Senha</option>
+                      <option value="key">Chave Privada (RSA/Ed25519)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="form-row" id="ssh-password-row">
+                  <label class="field">
+                    <span class="field-label">Senha</span>
+                    <input id="ssh-password" class="ssh-input" type="password" placeholder="••••••••" />
+                  </label>
+                </div>
+
+                <div class="form-row" id="ssh-key-row" style="display:none">
+                  <label class="field">
+                    <span class="field-label">Chave Privada</span>
+                    <textarea id="ssh-private-key" class="ssh-input ssh-key-input" placeholder="-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA...
+-----END RSA PRIVATE KEY-----"></textarea>
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label class="field">
+                    <span class="field-label">Comando (opcional)</span>
+                    <input id="ssh-command" class="ssh-input" type="text" placeholder="Ex: cat /proc/cpuinfo | grep Model" />
+                  </label>
+                </div>
+
+                <div class="panel-actions">
+                  <button id="ssh-connect-btn" class="btn">🔌 Conectar SSH</button>
+                  <button id="ssh-clear-btn" class="btn secondary">Limpar</button>
+                </div>
+              </div>
+
+              <div id="ssh-result" class="result-box mono">Pronto para conectar. Insira o IP do dispositivo e clique em "Conectar SSH".</div>
+
+              <!-- Interactive SSH Terminal -->
+              <div id="ssh-terminal-section" class="ssh-terminal-section" style="display:none">
+                <div class="ssh-terminal-header">
+                  <div class="sth-left">
+                    <span class="sth-icon">🖥</span>
+                    <div>
+                      <h4>Terminal Interativo</h4>
+                      <p class="muted" id="ssh-terminal-info">Conectado via SSH</p>
+                    </div>
+                  </div>
+                  <div class="action-group">
+                    <button id="ssh-terminal-disconnect" class="btn secondary">Desconectar</button>
+                  </div>
+                </div>
+                <div class="ssh-terminal-wrap">
+                  <div id="ssh-terminal-container" class="ssh-terminal"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js" crossorigin="anonymous"></script>
   <script src="/app.js?v=6"></script>
 </body>
 </html>

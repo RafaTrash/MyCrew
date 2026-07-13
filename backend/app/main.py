@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import io
+
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+import paramiko
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import (
@@ -50,6 +53,8 @@ from .schemas import (
     FlowStartResponse,
     KnowledgeAttachRequest,
     KnowledgeSearchResponse,
+    SshConnectRequest,
+    SshConnectResponse,
 )
 
 app = FastAPI(title="MyCrew Backend", version="2.1.0")
@@ -727,3 +732,275 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             "knowledge_hits": len(qdrant_context_items),
         },
     )
+
+
+def _ssh_exec(payload: SshConnectRequest) -> SshConnectResponse:
+    """
+    Sincrono: executa a conexao SSH em uma thread separada via run_in_executor.
+    """
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        if payload.key_type == "key" and payload.private_key:
+            key_file = io.StringIO(payload.private_key)
+            try:
+                private_key = paramiko.RSAKey.from_private_key(key_file)
+            except paramiko.SSHException:
+                try:
+                    key_file.seek(0)
+                    private_key = paramiko.Ed25519Key.from_private_key(key_file)
+                except paramiko.SSHException:
+                    raise HTTPException(status_code=400, detail="chave privada invalida (formato RSA ou Ed25519 esperado)")
+            client.connect(
+                hostname=payload.host,
+                port=payload.port,
+                username=payload.username,
+                pkey=private_key,
+                timeout=10,
+            )
+        else:
+            client.connect(
+                hostname=payload.host,
+                port=payload.port,
+                username=payload.username,
+                password=payload.password,
+                timeout=10,
+            )
+
+        output = ""
+        if payload.command:
+            stdin, stdout, stderr = client.exec_command(payload.command, timeout=15)
+            stdout_str = stdout.read().decode("utf-8", errors="replace").strip()
+            stderr_str = stderr.read().decode("utf-8", errors="replace").strip()
+            lines = [s for s in [stdout_str, stderr_str] if s]
+            output = "\n".join(lines)
+        else:
+            output = f"Conexao SSH estabelecida com {payload.host}:{payload.port} como {payload.username}"
+
+        client.close()
+        return SshConnectResponse(
+            connected=True,
+            host=payload.host,
+            port=payload.port,
+            username=payload.username,
+            output=output,
+        )
+
+    except paramiko.AuthenticationException as exc:
+        return SshConnectResponse(
+            connected=False,
+            host=payload.host,
+            port=payload.port,
+            username=payload.username,
+            error=f"Falha de autenticacao: {exc}",
+        )
+    except paramiko.SSHException as exc:
+        return SshConnectResponse(
+            connected=False,
+            host=payload.host,
+            port=payload.port,
+            username=payload.username,
+            error=f"Erro SSH: {exc}",
+        )
+    except Exception as exc:
+        return SshConnectResponse(
+            connected=False,
+            host=payload.host,
+            port=payload.port,
+            username=payload.username,
+            error=f"Erro ao conectar: {exc}",
+        )
+
+
+@app.post("/api/iot/ssh/connect", response_model=SshConnectResponse)
+async def ssh_connect(payload: SshConnectRequest) -> SshConnectResponse:
+    """
+    Conecta via SSH a um dispositivo IoT e retorna a saida do comando (se fornecido).
+    """
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, _ssh_exec, payload)
+    return result
+
+
+@app.websocket("/api/iot/ssh/terminal")
+async def ssh_terminal(websocket: WebSocket):
+    """
+    WebSocket para terminal SSH interativo.
+    Primeira mensagem deve ser um JSON com os parametros de conexao:
+    { "host": "...", "port": 22, "username": "root", "password": "...",
+      "key_type": "password", "private_key": "..." }
+    A partir dai, cada mensagem de texto do cliente e enviada ao shell SSH
+    e a saida do shell e retornada ao cliente.
+    """
+    await websocket.accept()
+
+    client: paramiko.SSHClient | None = None
+    channel: paramiko.Channel | None = None
+    transport: paramiko.Transport | None = None
+
+    try:
+        # --- 1. Receber parametros de conexao ---
+        raw = await websocket.receive_text()
+        try:
+            params = json.loads(raw)
+        except json.JSONDecodeError:
+            await websocket.send_text(json.dumps({"error": "JSON invalido para parametros de conexao"}))
+            await websocket.close(1008)
+            return
+
+        host = params.get("host", "").strip()
+        port = int(params.get("port", 22))
+        username = params.get("username", "root").strip()
+        password = params.get("password", "")
+        key_type = params.get("key_type", "password")
+        private_key_str = params.get("private_key", "")
+        cols = int(params.get("cols", 80))
+        rows = int(params.get("rows", 24))
+
+        if not host:
+            await websocket.send_text(json.dumps({"error": "host nao informado"}))
+            await websocket.close(1008)
+            return
+
+        # --- 2. Conectar SSH ---
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            if key_type == "key" and private_key_str:
+                key_file = io.StringIO(private_key_str)
+                try:
+                    private_key = paramiko.RSAKey.from_private_key(key_file)
+                except paramiko.SSHException:
+                    try:
+                        key_file.seek(0)
+                        private_key = paramiko.Ed25519Key.from_private_key(key_file)
+                    except paramiko.SSHException:
+                        await websocket.send_text(json.dumps({"error": "chave privada invalida"}))
+                        await websocket.close(1008)
+                        return
+                client.connect(
+                    hostname=host, port=port, username=username,
+                    pkey=private_key, timeout=10,
+                )
+            else:
+                client.connect(
+                    hostname=host, port=port, username=username,
+                    password=password, timeout=10,
+                )
+
+            transport = client.get_transport()
+            if not transport:
+                await websocket.send_text(json.dumps({"error": "falha ao obter transporte SSH"}))
+                await websocket.close(1011)
+                return
+
+            channel = transport.open_session()
+            channel.get_pty(width=cols, height=rows, term="xterm-256color")
+            channel.invoke_shell()
+        except paramiko.AuthenticationException as exc:
+            await websocket.send_text(json.dumps({"error": f"Falha de autenticacao: {exc}"}))
+            await websocket.close(1008)
+            return
+        except Exception as exc:
+            await websocket.send_text(json.dumps({"error": f"Erro SSH: {exc}"}))
+            await websocket.close(1011)
+            return
+
+        await websocket.send_text(json.dumps({"connected": True, "host": host, "port": port, "username": username}))
+
+        # --- 3. Loop bidirecional ---
+        async def reader():
+            """Le do canal SSH e envia para o WebSocket."""
+            try:
+                while channel and not channel.closed:
+                    if channel.recv_ready():
+                        data = channel.recv(4096)
+                        if data:
+                            await websocket.send_text(json.dumps({"data": data.decode("utf-8", errors="replace")}))
+                    elif channel.recv_stderr_ready():
+                        data = channel.recv_stderr(4096)
+                        if data:
+                            await websocket.send_text(json.dumps({"data": data.decode("utf-8", errors="replace")}))
+                    else:
+                        # Check if channel is still alive
+                        if channel.exit_status_ready():
+                            break
+                        await asyncio.sleep(0.01)
+            except (asyncio.CancelledError, WebSocketDisconnect, Exception):
+                pass
+            finally:
+                try:
+                    await websocket.close(1000)
+                except Exception:
+                    pass
+
+        async def writer():
+            """Le do WebSocket e envia para o canal SSH."""
+            try:
+                while True:
+                    msg = await websocket.receive_text()
+                    try:
+                        parsed = json.loads(msg)
+                    except json.JSONDecodeError:
+                        continue
+
+                    # Resize terminal
+                    if "resize" in parsed:
+                        new_cols = parsed["resize"].get("cols", cols)
+                        new_rows = parsed["resize"].get("rows", rows)
+                        if channel and not channel.closed:
+                            try:
+                                channel.resize_pty(width=new_cols, height=new_rows)
+                            except Exception:
+                                pass
+                        continue
+
+                    # Input data
+                    data = parsed.get("input", "")
+                    if data and channel and not channel.closed:
+                        channel.send(data)
+
+                    # Disconnect
+                    if parsed.get("disconnect"):
+                        break
+            except (WebSocketDisconnect, asyncio.CancelledError, Exception):
+                pass
+            finally:
+                if channel and not channel.closed:
+                    try:
+                        channel.close()
+                    except Exception:
+                        pass
+                if client:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+
+        # Executa leitura e escrita concorrentemente
+        await asyncio.gather(reader(), writer())
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_text(json.dumps({"error": str(exc)}))
+        except Exception:
+            pass
+    finally:
+        if channel and not channel.closed:
+            try:
+                channel.close()
+            except Exception:
+                pass
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
+        try:
+            await websocket.close(1000)
+        except Exception:
+            pass

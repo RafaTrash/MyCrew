@@ -434,6 +434,12 @@ body {
   text-decoration: none;
 }
 .stack-item .si-addr:hover { color: var(--blue); }
+.stack-item .si-dash {
+  color: var(--violet-2);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.stack-item .si-dash:hover { color: var(--violet); }
 
 .badge {
   font-size: 11px;
@@ -916,6 +922,183 @@ body {
   height: 18px;
   line-height: 1;
   padding: 0;
+}
+
+/* ===== SSH SECTION ===== */
+.ssh-section {
+  margin-top: 20px;
+  border-top: 1px solid var(--panel-line);
+  padding-top: 20px;
+}
+
+.ssh-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ssh-icon {
+  font-size: 28px;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.2), rgba(53, 208, 165, 0.1));
+  border: 1px solid rgba(124, 92, 255, 0.3);
+}
+
+.ssh-header h4 {
+  margin: 0 0 4px;
+  font-family: "Sora", sans-serif;
+  font-size: 18px;
+}
+
+.ssh-header p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ssh-form {
+  display: grid;
+  gap: 14px;
+  max-width: 700px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.form-row .field {
+  flex: 1;
+}
+
+.ssh-port-field {
+  max-width: 120px;
+  flex: none !important;
+}
+
+.ssh-auth-field {
+  max-width: 300px;
+  flex: none !important;
+}
+
+.ssh-input {
+  width: 100%;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  background: var(--bg-2);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.ssh-input:focus {
+  border-color: rgba(124, 92, 255, 0.5);
+}
+
+.ssh-input::placeholder {
+  color: var(--faint);
+}
+
+.ssh-key-input {
+  min-height: 120px;
+  resize: vertical;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#ssh-result {
+  max-width: 700px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ===== SSH INTERACTIVE TERMINAL ===== */
+.ssh-terminal-section {
+  margin-top: 20px;
+  border-top: 1px solid var(--panel-line);
+  padding-top: 20px;
+}
+
+.ssh-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.sth-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.sth-icon {
+  font-size: 28px;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(76, 192, 255, 0.2), rgba(53, 208, 165, 0.1));
+  border: 1px solid rgba(76, 192, 255, 0.3);
+}
+
+.ssh-terminal-header h4 {
+  margin: 0 0 4px;
+  font-family: "Sora", sans-serif;
+  font-size: 18px;
+}
+
+.ssh-terminal-header p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ssh-terminal-wrap {
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0a0a0f;
+}
+
+.ssh-terminal {
+  width: 100%;
+  height: 400px;
+}
+
+.ssh-terminal .xterm {
+  height: 100%;
+  padding: 8px;
+}
+
+.ssh-terminal .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-line) transparent;
+}
+
+.ssh-terminal .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ssh-terminal .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--panel-line);
+  border-radius: 4px;
+}
+
+.ssh-terminal .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ===== RESPONSIVE ===== */

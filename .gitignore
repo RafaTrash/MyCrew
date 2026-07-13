@@ -1,4 +1,4 @@
 .env
 .aider*
-/agents
+agents/
 /automation

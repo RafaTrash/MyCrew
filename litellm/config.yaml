@@ -1,0 +1,162 @@
+# ============================================
+# LiteLLM Proxy Configuration - MyCrew Gateway
+# ============================================
+# Gerencia roteamento para: Ollama, OpenRouter, OpenAI, Gemini, Groq
+# Documentacao: https://docs.litellm.ai/docs/proxy/configs
+
+model_list:
+  # ----- Ollama (local) -----
+  - model_name: ollama
+    litellm_params:
+      model: ollama/qwen2.5-coder:7b
+      api_base: http://ollama:11434
+      rpm: 60
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: ollama
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama:11434
+      rpm: 60
+    model_info:
+      mode: embedding
+
+  # ----- OpenAI -----
+  - model_name: openai
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 500
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: openai
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 500
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  # ----- OpenRouter -----
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/anthropic/claude-3.5-sonnet
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 200
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/google/gemini-2.0-flash-001
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 200
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 200
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  # ----- Gemini (nativo via API key) -----
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.0-flash-001
+      api_key: os.environ/GEMINI_API_KEY
+      rpm: 360
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.0-flash-lite-001
+      api_key: os.environ/GEMINI_API_KEY
+      rpm: 360
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  # ----- Groq -----
+  - model_name: groq
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 30
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: groq
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 30
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+  - model_name: groq
+    litellm_params:
+      model: groq/deepseek-r1-distill-llama-70b
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 30
+    model_info:
+      mode: chat
+      supports_function_calling: true
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  request_timeout: 120
+  num_retries: 2
+  fallbacks:
+    - openai/gpt-4o-mini: [openrouter/google/gemini-2.0-flash-001, groq/llama-3.1-8b-instant]
+    - openrouter/anthropic/claude-3.5-sonnet: [openrouter/google/gemini-2.0-flash-001, groq/llama-3.3-70b-versatile]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/LITELLM_DATABASE_URL
+  otel: false
+  custom_auth: false
+  max_request_size_mb: 20
+  max_response_size_mb: 20
+  alerting: []
+  allowed_routes:
+    - /chat/completions
+    - /models
+    - /model/info
+    - /model/metrics
+    - /health
+    - /health/liveliness
+    - /health/readiness
+    - /routes
+    - /key/generate
+    - /key/info
+    - /spend/logs
+    - /spend/keys
+    - /global/spend/logs
+
+router_settings:
+  routing_strategy: "latency-based-routing"
+  allowed_fails: 3
+  num_retries: 2
+  fallback_strategy: "exponential_backoff"
+  context_window_fallbacks:
+    - openai/gpt-4o-mini: [openrouter/google/gemini-2.0-flash-001]
+  cooldown_time: 30
+  redis_host: null
+  redis_port: null
+  redis_password: null

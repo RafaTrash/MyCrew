@@ -62,7 +62,6 @@ const stackHealth = document.getElementById("stack-health");
 const stackDot = document.getElementById("stack-dot");
 const stackSub = document.getElementById("stack-sub");
 const agentSearch = document.getElementById("agent-search");
-const linkQdrantOverview = document.getElementById("link-qdrant-overview");
 const linkQdrantDashboard = document.getElementById("link-qdrant-dashboard");
 const linkPortainer = document.getElementById("link-portainer");
 const linkDozzle = document.getElementById("link-dozzle");
@@ -157,6 +156,7 @@ function renderKpis(data) {
 function renderStack(data) {
   const services = data.services || [];
   const c = data.counters || {};
+  const ep = data.endpoints || {};
   stackCount.textContent = `${c.services_online ?? 0}/${services.length}`;
   stackList.innerHTML = services.length
     ? services
@@ -168,6 +168,7 @@ function renderStack(data) {
         <div class='si-main'>
           <div class='si-label'>${esc(s.label)}</div>
           <a class='si-addr' href='${esc(s.address)}' target='_blank' rel='noreferrer'>${esc(s.address)}</a>
+          ${s.key === "qdrant" && ep.qdrant_dashboard ? `<a class='si-addr si-dash' href='${esc(ep.qdrant_dashboard)}' target='_blank' rel='noreferrer'>Dashboard ↗</a>` : ""}
         </div>
         <span class='badge ${s.online ? "on" : "off"}'>${s.online ? "ONLINE" : "OFFLINE"}</span>
       </div>`
@@ -197,7 +198,6 @@ function renderSidebarHealth(data) {
 function renderEndpoints(data) {
   const ep = data.endpoints || {};
   if (ep.qdrant_dashboard) {
-    if (linkQdrantOverview) linkQdrantOverview.href = ep.qdrant_dashboard;
     if (linkQdrantDashboard) linkQdrantDashboard.href = ep.qdrant_dashboard;
   }
   if (ep.portainer && linkPortainer) linkPortainer.href = ep.portainer;
@@ -674,6 +674,269 @@ function bindJumps() {
     btn.addEventListener("click", () => setActivePage(btn.getAttribute("data-jump")));
   });
 }
+
+// === Interactive SSH Terminal (WebSocket + xterm.js) ===
+let sshTerminal = null;
+let sshFitAddon = null;
+let sshWs = null;
+let sshConnectedHost = null;
+let sshConnectedPort = null;
+let sshConnectedUser = null;
+
+const sshHost = document.getElementById("ssh-host");
+const sshPort = document.getElementById("ssh-port");
+const sshUser = document.getElementById("ssh-user");
+const sshAuthMethod = document.getElementById("ssh-auth-method");
+const sshPassword = document.getElementById("ssh-password");
+const sshPrivateKey = document.getElementById("ssh-private-key");
+const sshCommand = document.getElementById("ssh-command");
+const sshConnectBtn = document.getElementById("ssh-connect-btn");
+const sshClearBtn = document.getElementById("ssh-clear-btn");
+const sshResult = document.getElementById("ssh-result");
+const sshPasswordRow = document.getElementById("ssh-password-row");
+const sshKeyRow = document.getElementById("ssh-key-row");
+const sshTerminalSection = document.getElementById("ssh-terminal-section");
+const sshTerminalContainer = document.getElementById("ssh-terminal-container");
+const sshTerminalInfo = document.getElementById("ssh-terminal-info");
+const sshTerminalDisconnect = document.getElementById("ssh-terminal-disconnect");
+
+function setSshResult(value, isError = false) {
+  sshResult.textContent = value;
+  sshResult.style.color = isError ? "var(--red)" : "var(--ink)";
+}
+
+function toggleSshAuthMethod() {
+  const method = sshAuthMethod.value;
+  if (method === "password") {
+    sshPasswordRow.style.display = "";
+    sshKeyRow.style.display = "none";
+  } else {
+    sshPasswordRow.style.display = "none";
+    sshKeyRow.style.display = "";
+  }
+}
+
+sshAuthMethod.addEventListener("change", toggleSshAuthMethod);
+
+function initTerminal() {
+  if (!sshTerminal) {
+    sshTerminal = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "block",
+      fontSize: 14,
+      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+      theme: {
+        background: "#0a0a0f",
+        foreground: "#e7edf7",
+        cursor: "#7c5cff",
+        selectionBackground: "rgba(124, 92, 255, 0.3)",
+        black: "#1c2b45",
+        red: "#ff6b81",
+        green: "#35d0a5",
+        yellow: "#f2b34b",
+        blue: "#4cc0ff",
+        magenta: "#9d7bff",
+        cyan: "#4cc0ff",
+        white: "#e7edf7",
+        brightBlack: "#5b6a86",
+        brightRed: "#ff6b81",
+        brightGreen: "#35d0a5",
+        brightYellow: "#f2b34b",
+        brightBlue: "#4cc0ff",
+        brightMagenta: "#9d7bff",
+        brightCyan: "#4cc0ff",
+        brightWhite: "#e7edf7",
+      },
+    });
+    // The xterm-addon-fit UMD bundle wraps the class in { FitAddon: class },
+    // so window.FitAddon is an object, not the constructor directly.
+    const FitAddonClass = window.FitAddon?.FitAddon || window.FitAddon;
+    sshFitAddon = new FitAddonClass();
+    sshTerminal.loadAddon(sshFitAddon);
+    sshTerminal.open(sshTerminalContainer);
+    sshFitAddon.fit();
+  }
+}
+
+function openInteractiveTerminal(host, port, username, password, privateKey, keyType) {
+  initTerminal();
+
+  // Clear terminal
+  sshTerminal.reset();
+
+  // Build WebSocket URL (use wss:// if page is https)
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${window.location.host}/api/iot/ssh/terminal`;
+
+  sshWs = new WebSocket(wsUrl);
+
+  sshWs.onopen = () => {
+    // Send connection parameters
+    const params = {
+      host,
+      port,
+      username,
+      password: password || "",
+      key_type: keyType || "password",
+      private_key: privateKey || "",
+      cols: sshTerminal.cols,
+      rows: sshTerminal.rows,
+    };
+    sshWs.send(JSON.stringify(params));
+
+    sshConnectedHost = host;
+    sshConnectedPort = port;
+    sshConnectedUser = username;
+    sshTerminalInfo.textContent = `Conectado: ${username}@${host}:${port}`;
+    sshTerminalSection.style.display = "";
+
+    // Show connection in result box
+    setSshResult(`✅ Terminal interativo conectado a ${username}@${host}:${port}\nDigite comandos no terminal abaixo.`);
+  };
+
+  sshWs.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.error) {
+        sshTerminal.write(`\r\n\x1b[31m❌ Erro: ${msg.error}\x1b[0m\r\n`);
+        setSshResult(`❌ ${msg.error}`, true);
+        return;
+      }
+      if (msg.connected) {
+        sshTerminal.write(`\r\n\x1b[32m✅ Conectado a ${msg.username}@${msg.host}:${msg.port}\x1b[0m\r\n`);
+        return;
+      }
+      if (msg.data) {
+        sshTerminal.write(msg.data);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  };
+
+  sshWs.onerror = () => {
+    sshTerminal.write(`\r\n\x1b[31m❌ Erro de conexão WebSocket\x1b[0m\r\n`);
+    setSshResult("❌ Erro de conexão WebSocket", true);
+  };
+
+  sshWs.onclose = () => {
+    sshTerminal.write(`\r\n\x1b[33m🔌 Conexão encerrada.\x1b[0m\r\n`);
+    sshTerminalInfo.textContent = "Desconectado";
+    sshWs = null;
+  };
+
+  // Send terminal input to WebSocket
+  sshTerminal.onData((data) => {
+    if (sshWs && sshWs.readyState === WebSocket.OPEN) {
+      sshWs.send(JSON.stringify({ input: data }));
+    }
+  });
+
+  // Handle terminal resize
+  const observer = new ResizeObserver(() => {
+    if (sshFitAddon) {
+      try {
+        sshFitAddon.fit();
+        if (sshWs && sshWs.readyState === WebSocket.OPEN) {
+          sshWs.send(JSON.stringify({
+            resize: { cols: sshTerminal.cols, rows: sshTerminal.rows }
+          }));
+        }
+      } catch {
+        // ignore
+      }
+    }
+  });
+  observer.observe(sshTerminalContainer);
+
+  // Store observer ref for cleanup
+  sshTerminal._resizeObserver = observer;
+}
+
+function closeInteractiveTerminal() {
+  if (sshWs) {
+    sshWs.send(JSON.stringify({ disconnect: true }));
+    sshWs.close();
+    sshWs = null;
+  }
+  if (sshTerminal) {
+    if (sshTerminal._resizeObserver) {
+      sshTerminal._resizeObserver.disconnect();
+      delete sshTerminal._resizeObserver;
+    }
+    sshTerminal.reset();
+    sshTerminal.write("Terminal encerrado. Conecte-se novamente para interagir.\r\n");
+  }
+  sshTerminalSection.style.display = "none";
+  sshTerminalInfo.textContent = "Desconectado";
+  sshConnectedHost = null;
+}
+
+sshConnectBtn.addEventListener("click", async () => {
+  const host = sshHost.value.trim();
+  if (!host) {
+    setSshResult("Erro: informe o endereço IP do dispositivo.", true);
+    return;
+  }
+
+  const port = parseInt(sshPort.value, 10) || 22;
+  const username = sshUser.value.trim() || "root";
+  const password = sshPassword.value;
+  const private_key = sshPrivateKey.value;
+  const command = sshCommand.value.trim();
+  const key_type = sshAuthMethod.value;
+
+  // If a command was provided, use the one-shot HTTP mode (existing behavior)
+  if (command) {
+    setSshResult(`Conectando a ${username}@${host}:${port}...`);
+
+    const body = { host, port, username, password, private_key, command, key_type };
+
+    try {
+      const res = await fetch("/api/iot/ssh/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (data.connected) {
+        const lines = [
+          `✅ Conectado a ${data.username}@${data.host}:${data.port}`,
+          "",
+          data.output,
+        ];
+        setSshResult(lines.join("\n"));
+      } else {
+        setSshResult(`❌ Falha na conexão:\n${data.error}`, true);
+      }
+    } catch (err) {
+      setSshResult(`❌ Erro de rede: ${err.message}`, true);
+    }
+    return;
+  }
+
+  // No command → open interactive WebSocket terminal
+  closeInteractiveTerminal();
+  openInteractiveTerminal(host, port, username, password, private_key, key_type);
+});
+
+sshTerminalDisconnect.addEventListener("click", () => {
+  closeInteractiveTerminal();
+});
+
+sshClearBtn.addEventListener("click", () => {
+  closeInteractiveTerminal();
+  sshHost.value = "";
+  sshPort.value = "22";
+  sshUser.value = "root";
+  sshPassword.value = "";
+  sshPrivateKey.value = "";
+  sshCommand.value = "";
+  sshAuthMethod.value = "password";
+  toggleSshAuthMethod();
+  setSshResult('Pronto para conectar. Insira o IP do dispositivo e clique em "Conectar SSH".');
+});
 
 document.getElementById("refresh-status").addEventListener("click", () => {
   loadStatus();

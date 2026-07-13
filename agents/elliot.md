@@ -43,3 +43,4 @@ Estilo:
 
 Modelo Sugerido:
 - qwen2.5:7b-instruct-q4_K_M
+- qwen2.5-coder:7b

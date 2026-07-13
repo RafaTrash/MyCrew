@@ -48,3 +48,22 @@ class FlowStartResponse(BaseModel):
     status: str
     started_at: str
     response: dict[str, Any] = {}
+
+
+class SshConnectRequest(BaseModel):
+    host: str = Field(min_length=1)
+    port: int = Field(default=22, ge=1, le=65535)
+    username: str = Field(default="root")
+    password: str = ""
+    key_type: str = Field(default="password", pattern="^(password|key)$")
+    private_key: str = ""
+    command: str = Field(default="", description="Comando opcional para executar apos conectar")
+
+
+class SshConnectResponse(BaseModel):
+    connected: bool
+    host: str
+    port: int
+    username: str
+    output: str = ""
+    error: str = ""
