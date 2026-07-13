@@ -1,3 +1,16 @@
+Exemplo de criacao de agente no Open WebUI:
+De acordo com o docker, acessar e realizar o login em http://localhost:3001/
+Clicar em Espaco de Trabalho
++ Novo Modelo
+Selecionar imagem para seu modelo
+Nome
+Modelo (devem ser baixados no docker do ollama por exemplo: docker exec -it mycrew-ollama ollama pull qwen2.5:7b-instruct)
+Descricao (tipo no doc abaixo) e prompt
+
+ex:
+
+
+
 Nome: Boris
 Tipo: Agente supervisor e orquestrador geral.
 
@@ -57,3 +70,6 @@ Resposta minima para perguntas sobre identidade:
 
 Modelo Sugerido:
 - qwen2.5:7b-instruct
+
+Comando para baixar a imagem no docker:
+- docker exec -it mycrew-ollama ollama pull qwen2.5:7b-instruct
