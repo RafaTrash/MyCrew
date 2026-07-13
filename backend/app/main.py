@@ -24,6 +24,7 @@ from .config import (
     PORTAINER_URL,
     UPTIME_KUMA_URL,
     AIDER_URL,
+    WATCHTOWER_URL,
     LITELLM_URL,
     OLLAMA_KEEP_ALIVE,
     OLLAMA_NUM_PREDICT,
@@ -43,6 +44,7 @@ from .config import (
     PUBLIC_PORTAINER,
     PUBLIC_UPTIME_KUMA,
     PUBLIC_AIDER,
+    PUBLIC_WATCHTOWER,
     PUBLIC_LITELLM,
     QDRANT_COLLECTION,
     QDRANT_TOP_K,
@@ -564,6 +566,13 @@ async def status() -> dict[str, Any]:
             "internal": LITELLM_URL,
             "health": f"{LITELLM_URL}/health/liveliness",
         },
+        {
+            "key": "watchtower",
+            "label": "Watchtower",
+            "address": PUBLIC_WATCHTOWER,
+            "internal": WATCHTOWER_URL,
+            "health": f"{WATCHTOWER_URL}/",
+        },
     ]
 
     health_results, models, openwebui_agents = await asyncio.gather(
@@ -597,6 +606,7 @@ async def status() -> dict[str, Any]:
             "portainer": PUBLIC_PORTAINER,
             "uptime_kuma": PUBLIC_UPTIME_KUMA,
             "aider": PUBLIC_AIDER,
+            "watchtower": PUBLIC_WATCHTOWER,
             "litellm": PUBLIC_LITELLM,
         },
         "ollama_models": models,
@@ -909,6 +919,8 @@ async def ssh_terminal(websocket: WebSocket):
             channel = transport.open_session()
             channel.get_pty(width=cols, height=rows, term="xterm-256color")
             channel.invoke_shell()
+            # Small delay for shell initialization - don't send stty to avoid breaking some shells
+            await asyncio.sleep(0.1)
         except paramiko.AuthenticationException as exc:
             await websocket.send_text(json.dumps({"error": f"Falha de autenticacao: {exc}"}))
             await websocket.close(1008)
@@ -925,6 +937,7 @@ async def ssh_terminal(websocket: WebSocket):
             """Le do canal SSH e envia para o WebSocket."""
             try:
                 while channel and not channel.closed:
+                    # Check both stdout and stderr - use if/elif to avoid duplicate reads
                     if channel.recv_ready():
                         data = channel.recv(4096)
                         if data:
@@ -937,7 +950,7 @@ async def ssh_terminal(websocket: WebSocket):
                         # Check if channel is still alive
                         if channel.exit_status_ready():
                             break
-                        await asyncio.sleep(0.01)
+                        await asyncio.sleep(0.05)  # Increased delay to reduce CPU usage and prevent race conditions
             except (asyncio.CancelledError, WebSocketDisconnect, Exception):
                 pass
             finally:

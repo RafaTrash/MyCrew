@@ -122,6 +122,8 @@ services:
       - LITELLM_MODE=PRODUCTION
       - LITELLM_LOG=INFO
       - LITELLM_STORE_MODEL_IN_DB=true
+      - UI_USERNAME=${UI_USERNAME:-admin-litellm}
+      - UI_PASSWORD=${UI_PASSWORD:-admin}
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
       - litellm_data:/app/data
@@ -203,6 +205,21 @@ services:
       - ./:/repo
     networks:
       - ai_net
+
+  # watchtower:
+  #   image: containrrr/watchtower:latest
+  #   container_name: mycrew-watchtower
+  #   restart: unless-stopped
+  #   environment:
+  #     - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 4 * * *}
+  #     - WATCHTOWER_CLEANUP=true
+  #     - WATCHTOWER_INCLUDE_STOPPED=false
+  #     - WATCHTOWER_TIMEOUT=60s
+  #     - WATCHTOWER_RETRY=3
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   networks:
+  #     - ai_net
   python-webapp:
     build:
       context: .

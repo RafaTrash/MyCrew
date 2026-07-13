@@ -67,6 +67,7 @@ const linkPortainer = document.getElementById("link-portainer");
 const linkDozzle = document.getElementById("link-dozzle");
 const linkAider = document.getElementById("link-aider");
 const linkLitellm = document.getElementById("link-litellm");
+const linkWatchtower = document.getElementById("link-watchtower");
 const dozzleFrame = document.getElementById("dozzle-frame");
 
 function esc(value) {
@@ -204,6 +205,7 @@ function renderEndpoints(data) {
   if (ep.portainer && linkPortainer) linkPortainer.href = ep.portainer;
   if (ep.aider && linkAider) linkAider.href = ep.aider;
   if (ep.litellm && linkLitellm) linkLitellm.href = ep.litellm;
+  if (ep.watchtower && linkWatchtower) linkWatchtower.href = ep.watchtower;
   // Dozzle e servido pelo nginx do frontend em /dozzle/ (mesma origem),
   // para permitir o embed via iframe sem bloqueio de X-Frame-Options.
   if (linkDozzle) linkDozzle.href = "/dozzle/";
@@ -772,9 +774,11 @@ function openInteractiveTerminal(host, port, username, password, privateKey, key
   // Clear terminal
   sshTerminal.reset();
 
-  // Build WebSocket URL (use wss:// if page is https)
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/api/iot/ssh/terminal`;
+  // Build WebSocket URL - use same origin through nginx proxy
+  // This ensures WebSocket goes through nginx which proxies to backend
+  const wsUrl = window.location.protocol === "https:" 
+    ? "wss://"+ window.location.host + "/api/iot/ssh/terminal" 
+    : "ws://"+ window.location.host + "/api/iot/ssh/terminal";
 
   sshWs = new WebSocket(wsUrl);
 

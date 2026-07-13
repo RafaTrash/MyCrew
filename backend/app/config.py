@@ -37,5 +37,8 @@ PUBLIC_DOZZLE = env("PUBLIC_DOZZLE", "http://localhost:8085/dozzle")
 PUBLIC_PORTAINER = env("PUBLIC_PORTAINER", "http://localhost:9000")
 PUBLIC_UPTIME_KUMA = env("PUBLIC_UPTIME_KUMA", "http://localhost:3002")
 PUBLIC_AIDER = env("PUBLIC_AIDER", "http://localhost:8501")
+WATCHTOWER_URL = env("WATCHTOWER_URL", "http://watchtower:8080")
+PUBLIC_WATCHTOWER = env("PUBLIC_WATCHTOWER", "http://localhost:8083")
+
 LITELLM_URL = env("LITELLM_URL", "http://litellm:4000")
 PUBLIC_LITELLM = env("PUBLIC_LITELLM", "http://localhost:4000")
