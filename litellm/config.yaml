@@ -134,13 +134,25 @@ general_settings:
   max_response_size_mb: 20
   alerting: []
   allowed_routes:
+    # v1 endpoints
     - /chat/completions
     - /models
     - /model/info
+    - /model/new
     - /model/metrics
     - /health
     - /health/liveliness
     - /health/readiness
+    - /health/test_connection
+    # v2 endpoints (needed for API key model registration and connection tests)
+    - /v2/model/info
+    - /v2/model/new
+    - /v2/chat/completions
+    - /v2/embeddings
+    - /v2/health/test_connection
+    - /v2/routes
+    - /v2/key/generate
+    - /v2/key/info
     - /routes
     - /key/generate
     - /key/info

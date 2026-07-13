@@ -14,6 +14,7 @@
   --amber: #f2b34b;
   --red: #ff6b81;
   --blue: #4cc0ff;
+  --pink: #ff6bb5;
   --chip: #14203a;
 }
 
@@ -454,19 +455,91 @@ body {
 /* ===== MODELS ===== */
 .models-list { display: grid; gap: 8px; max-height: 320px; overflow: auto; }
 
+.provider-group {
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.provider-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+}
+
+.provider-name {
+  flex: 1;
+  color: var(--ink);
+}
+
+.provider-count {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.provider-models {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 8px;
+}
+
 .model-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--panel-line);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--bg-2);
+  padding: 6px 8px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
+  font-size: 12px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
 }
 
-.model-item .mi-ico { color: var(--violet-2); }
+.model-item:hover {
+  background: rgba(124, 92, 255, 0.05);
+}
+
+.model-name {
+  color: var(--ink);
+}
+
+.model-mode {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(76, 192, 255, 0.1);
+  color: var(--blue);
+  border: 1px solid rgba(76, 192, 255, 0.2);
+}
+
+/* Provider badge colors */
+.badge.local-badge {
+  color: var(--green);
+  background: rgba(53, 208, 165, 0.12);
+  border: 1px solid rgba(53, 208, 165, 0.3);
+}
+
+.badge.api-badge {
+  color: var(--blue);
+  background: rgba(76, 192, 255, 0.12);
+  border: 1px solid rgba(76, 192, 255, 0.3);
+}
+
 .model-empty { color: var(--faint); font-size: 13px; padding: 8px; }
 
 /* ===== AGENTS ===== */

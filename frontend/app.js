@@ -179,12 +179,109 @@ function renderStack(data) {
     : "<div class='model-empty'>Sem serviços.</div>";
 }
 
-function renderModels(data) {
-  const models = data.ollama_models || [];
+// Provider icons and colors for model badges
+function getProviderIcon(provider) {
+  const icons = {
+    ollama: "●",
+    openai: "🤖",
+    openrouter: "🔀",
+    gemini: "G",
+    groq: "⚡",
+    xai: "🚀",
+    anthropic: "🦙",
+  };
+  return icons[provider] || "◆";
+}
+
+function renderModels(modelsData) {
+  // Suporta tanto o formato antigo (array de strings) quanto o novo (objeto com models)
+  let models = [];
+  if (Array.isArray(modelsData)) {
+    models = modelsData.map(m => typeof m === "string" ? { id: m, name: m, provider: "ollama", origin: "local" } : m);
+  } else if (modelsData && modelsData.models) {
+    models = modelsData.models;
+  }
+  
+  // Se não houver modelsData, tenta o formato antigo do /api/status
+  if (!models.length && modelsData && modelsData.ollama_models) {
+    models = modelsData.ollama_models.map(m => ({ id: m, name: m, provider: "ollama", origin: "local" }));
+  }
+  
+  const localCount = models.filter(m => m.origin === "local").length;
+  const apiCount = models.filter(m => m.origin === "api").length;
+  
   modelsCount.textContent = String(models.length);
-  modelsList.innerHTML = models.length
-    ? models.map((m) => `<div class='model-item'><span class='mi-ico'>◆</span>${esc(m)}</div>`).join("")
-    : "<div class='model-empty'>Nenhum modelo carregado no Ollama.</div>";
+  
+  if (models.length === 0) {
+    modelsList.innerHTML = "<div class='model-empty'>Nenhum modelo disponível.</div>";
+    return;
+  }
+  
+  // Agrupa por provider
+  const byProvider = {};
+  models.forEach(m => {
+    const provider = m.provider || "unknown";
+    if (!byProvider[provider]) byProvider[provider] = [];
+    byProvider[provider].push(m);
+  });
+  
+  // Ordena providers: local primeiro, depois alfabeticamente
+  const providerOrder = { ollama: 0, openai: 1, openrouter: 2, gemini: 3, groq: 4, xai: 5, anthropic: 6 };
+  const sortedProviders = Object.keys(byProvider).sort((a, b) => {
+    const orderA = providerOrder[a] ?? 99;
+    const orderB = providerOrder[b] ?? 99;
+    return orderA - orderB || a.localeCompare(b);
+  });
+  
+  modelsList.innerHTML = sortedProviders
+    .map(provider => {
+      const providerModels = byProvider[provider];
+      const info = getProviderInfo(provider);
+      const originBadge = provider === "ollama" ? "LOCAL" : "API";
+      return `
+        <div class='provider-group'>
+          <div class='provider-header'>
+            <span class='provider-icon'>${getProviderIcon(provider)}</span>
+            <span class='provider-name'>${esc(info.label)}</span>
+            <span class='badge ${provider === "ollama" ? "local" : "api"}-badge'>${originBadge}</span>
+            <span class='provider-count'>${providerModels.length}</span>
+          </div>
+          <div class='provider-models'>
+            ${providerModels.map(m => `
+              <div class='model-item' title='${esc(m.id)}'>
+                <span class='model-name'>${esc(m.name)}</span>
+                ${m.mode ? `<span class='model-mode' title='Modo'>${esc(m.mode)}</span>` : ""}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function getProviderInfo(provider) {
+  const providerData = {
+    ollama: { label: "Ollama (Local)", color: "green" },
+    openai: { label: "OpenAI", color: "blue" },
+    openrouter: { label: "OpenRouter", color: "violet" },
+    gemini: { label: "Google", color: "amber" },
+    groq: { label: "Groq", color: "cyan" },
+    xai: { label: "Grok", color: "pink" },
+    anthropic: { label: "Anthropic", color: "orange" },
+  };
+  return providerData[provider] || { label: provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "Desconhecido", color: "muted" };
+}
+
+// Mantém compatibilidade com chamada existente
+function renderModelsCompat(data) {
+  // Usa o novo formato se disponível, senão o antigo
+  if (data && data.models) {
+    renderModels(data);
+  } else {
+    // Fallback para formato antigo
+    renderModels(data.ollama_models || []);
+  }
 }
 
 function renderSidebarHealth(data) {
@@ -336,6 +433,25 @@ async function loadStatus() {
     stackHealth.textContent = "OFFLINE";
     stackSub.textContent = "Falha ao consultar a stack.";
     if (stackList) stackList.innerHTML = `<div class='model-empty'>Erro: ${esc(err.message)}</div>`;
+  }
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch("/api/models");
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    const data = await res.json();
+    renderModels(data);
+    // Atualiza o contador no sidebar
+    if (data.counter) {
+      stackSub.textContent = 
+        `${data.counter.local ?? 0} locais · ${data.counter.api ?? 0} APIs · ${data.total ?? 0} modelos`;
+    }
+  } catch (err) {
+    console.warn("Erro ao carregar modelos do /api/models:", err.message);
+    // Fallback: já foi carregado via /api/status -> renderModels(data)
   }
 }
 
@@ -952,6 +1068,7 @@ sshClearBtn.addEventListener("click", () => {
 
 document.getElementById("refresh-status").addEventListener("click", () => {
   loadStatus();
+  loadModels();
   loadPersonas();
 });
 document.getElementById("send-chat").addEventListener("click", sendChat);
@@ -971,6 +1088,7 @@ bindSearch();
 bindJumps();
 bindKnowledge();
 loadStatus();
+loadModels();
 loadPersonas();
 renderChat();
 setInterval(loadStatus, 20000);

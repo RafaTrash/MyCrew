@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import json
+import os
+import socket
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -46,6 +48,8 @@ from .config import (
     PUBLIC_AIDER,
     PUBLIC_WATCHTOWER,
     PUBLIC_LITELLM,
+    PUBLIC_POSTGRES,
+    PUBLIC_REDIS,
     QDRANT_COLLECTION,
     QDRANT_TOP_K,
     QDRANT_URL,
@@ -173,6 +177,19 @@ async def check_service(url: str) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+async def check_tcp_service(host: str, port: int, service_name: str = "") -> dict[str, Any]:
+    """Check TCP connectivity for services like PostgreSQL and Redis."""
+    try:
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: socket.create_connection((host, port), timeout=3.0)),
+            timeout=3.0
+        )
+        return {"ok": True, "status": "tcp_connected"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 async def fetch_models() -> list[str]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -180,6 +197,78 @@ async def fetch_models() -> list[str]:
             resp.raise_for_status()
         payload = resp.json()
         return [item.get("name", "") for item in payload.get("models", []) if item.get("name")]
+    except Exception:
+        return []
+
+
+def parse_provider_from_model(model_id: str) -> tuple[str, str]:
+    """Extract provider and model name from LiteLLM format (e.g., 'openai/gpt-4o' -> ('openai', 'gpt-4o'))."""
+    if "/" in model_id:
+        parts = model_id.split("/", 1)
+        return parts[0].lower(), parts[1] if len(parts) > 1 else model_id
+    return "unknown", model_id
+
+
+def get_origin_for_provider(provider: str) -> str:
+    """Determine origin based on provider."""
+    local_providers = {"ollama"}
+    return "local" if provider in local_providers else "api"
+
+
+def get_provider_info(provider: str) -> dict[str, Any]:
+    """Return display info for a provider (icon, color, label)."""
+    provider_data = {
+        "ollama": {"label": "Ollama", "color": "green"},
+        "openai": {"label": "OpenAI", "color": "blue"},
+        "openrouter": {"label": "OpenRouter", "color": "violet"},
+        "gemini": {"label": "Google", "color": "amber"},
+        "groq": {"label": "Groq", "color": "cyan"},
+        "xai": {"label": "Grok", "color": "pink"},
+        "anthropic": {"label": "Anthropic", "color": "orange"},
+    }
+    return provider_data.get(provider, {"label": provider.title(), "color": "muted"})
+
+
+async def fetch_litellm_models() -> list[dict[str, Any]]:
+    """Fetch all available models from LiteLLM including Ollama models."""
+    try:
+        headers = {"Content-Type": "application/json"}
+        # Try to get master key from config for authentication
+        master_key = os.getenv("LITELLM_MASTER_KEY", "")
+        if master_key:
+            headers["Authorization"] = f"Bearer {master_key}"
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{LITELLM_URL}/v1/models", headers=headers)
+            resp.raise_for_status()
+        payload = resp.json()
+        models_raw = payload.get("data", [])
+        if not isinstance(models_raw, list):
+            return []
+        
+        models = []
+        for item in models_raw:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id", "")).strip()
+            if not model_id:
+                continue
+            
+            provider, model_name = parse_provider_from_model(model_id)
+            
+            # Determine mode from item or default to chat
+            model_info = item.get("info", {}) if isinstance(item.get("info"), dict) else {}
+            mode = model_info.get("mode", "chat")
+            
+            models.append({
+                "id": model_id,
+                "name": model_name,
+                "provider": provider,
+                "origin": get_origin_for_provider(provider),
+                "mode": mode,
+                "source": "litellm",
+            })
+        return models
     except Exception:
         return []
 
@@ -500,6 +589,55 @@ async def health() -> dict[str, Any]:
     return {"status": "ok", "service": "mycrew-backend", "timestamp": now_iso()}
 
 
+@app.get("/api/models")
+async def models_list() -> dict[str, Any]:
+    """
+    Lista todos os modelos disponíveis agrupados por provider/origem.
+    Retorna modelos do Ollama (locais) e do LiteLLM (APIs).
+    """
+    ollama_models = await fetch_models()
+    litellm_models = await fetch_litellm_models()
+    
+    # Formata modelos do Ollama para formato unificado
+    ollama_formatted = [
+        {
+            "id": m,
+            "name": m,
+            "provider": "ollama",
+            "origin": "local",
+            "mode": "chat",
+            "source": "ollama",
+        }
+        for m in ollama_models
+    ]
+    
+    # Combina todos os modelos
+    all_models = ollama_formatted + litellm_models
+    
+    # Agrupa por provider
+    by_provider: dict[str, list[dict[str, Any]]] = {}
+    for model in all_models:
+        provider = model.get("provider", "unknown")
+        if provider not in by_provider:
+            by_provider[provider] = []
+        by_provider[provider].append(model)
+    
+    # Ordena providers: local primeiro, depois por nome
+    provider_order = {"ollama": 0, "openai": 1, "openrouter": 2, "gemini": 3, "groq": 4, "xai": 5}
+    sorted_providers = sorted(by_provider.keys(), key=lambda p: (provider_order.get(p, 99), p))
+    
+    return {
+        "models": all_models,
+        "by_provider": by_provider,
+        "providers": sorted_providers,
+        "total": len(all_models),
+        "counter": {
+            "local": len(ollama_formatted),
+            "api": len(litellm_models),
+        },
+    }
+
+
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     service_defs = [
@@ -530,6 +668,20 @@ async def status() -> dict[str, Any]:
             "address": PUBLIC_N8N,
             "internal": N8N_URL,
             "health": N8N_URL,
+        },
+        {
+            "key": "postgres",
+            "label": "PostgreSQL",
+            "address": PUBLIC_POSTGRES,
+            "internal": "postgres",
+            "health": ("tcp", 5432),
+        },
+        {
+            "key": "redis",
+            "label": "Redis",
+            "address": PUBLIC_REDIS,
+            "internal": "redis",
+            "health": ("tcp", 6379),
         },
         {
             "key": "dozzle",
@@ -575,8 +727,16 @@ async def status() -> dict[str, Any]:
         },
     ]
 
+    # Build health check tasks - HTTP or TCP
+    health_tasks = []
+    for item in service_defs:
+        if isinstance(item["health"], tuple) and item["health"][0] == "tcp":
+            health_tasks.append(check_tcp_service(item["internal"], item["health"][1]))
+        else:
+            health_tasks.append(check_service(item["health"]))
+
     health_results, models, openwebui_agents = await asyncio.gather(
-        asyncio.gather(*[check_service(item["health"]) for item in service_defs]),
+        asyncio.gather(*health_tasks),
         fetch_models(),
         fetch_openwebui_agents(),
     )

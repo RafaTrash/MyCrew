@@ -42,3 +42,9 @@ PUBLIC_WATCHTOWER = env("PUBLIC_WATCHTOWER", "http://localhost:8083")
 
 LITELLM_URL = env("LITELLM_URL", "http://litellm:4000")
 PUBLIC_LITELLM = env("PUBLIC_LITELLM", "http://localhost:4000")
+
+# Database services
+POSTGRES_URL = env("POSTGRES_URL", "http://postgres:5432")
+PUBLIC_POSTGRES = env("PUBLIC_POSTGRES", "http://localhost:5433")
+REDIS_URL = env("REDIS_URL", "http://redis:6379")
+PUBLIC_REDIS = env("PUBLIC_REDIS", "http://localhost:6379")
