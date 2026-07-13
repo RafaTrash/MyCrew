@@ -88,7 +88,7 @@
 </p>
 
 <p align="center">
-  <img src="./assets/architecture.png" alt="MyCrew AI Architecture" width="560">
+  <img src="./assets/architecture.svg" alt="MyCrew AI Architecture" width="720">
 </p>
 
 # MyCrew AI Local Stack
