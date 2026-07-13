@@ -16,9 +16,12 @@ o compose apenas faz `pull` das imagens publicas oficiais.
 | `dozzle` | [Dozzle](https://github.com/amir20/dozzle) | MIT |
 | `portainer` | [Portainer CE](https://github.com/portainer/portainer) | zlib |
 | `uptime-kuma` | [Uptime Kuma](https://github.com/louislam/uptime-kuma) | MIT |
+| `watchtower` | [Watchtower](https://github.com/containrrr/watchtower) | Apache 2.0 |
 | `aider` | [Aider](https://github.com/Aider-AI/aider) | Apache 2.0 |
 | `nginx` | [Nginx](https://github.com/nginx/nginx) | BSD-2-Clause |
 | `fastapi` (usado no `python-webapp`) | [FastAPI](https://github.com/tiangolo/fastapi) | MIT |
+| `litellm` | [LiteLLM](https://github.com/BerriAI/litellm) | Apache 2.0 |
+| `postgres` | [PostgreSQL](https://www.postgresql.org/) | PostgreSQL License (BSD-style) |
 
 > As licencas acima refletem o entendimento no momento da escrita deste NOTICE
 > (2026) e podem mudar entre versoes. Antes de qualquer uso comercial —

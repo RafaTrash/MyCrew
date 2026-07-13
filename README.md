@@ -104,6 +104,9 @@
 ![Portainer](https://img.shields.io/badge/Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white)
 ![Uptime Kuma](https://img.shields.io/badge/Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white)
 ![Aider](https://img.shields.io/badge/Aider-D97757?style=flat-square)
+![Watchtower](https://img.shields.io/badge/Watchtower-326DE6?style=flat-square)
+![LiteLLM](https://img.shields.io/badge/LiteLLM-4A90D9?style=flat-square)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
 **Responsavel pelo projeto:** Rafael Rodrigues
 [![GitHub Badge](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/RafaTrash)
@@ -123,6 +126,9 @@ Arquitetura atual: frontend e backend separados.
 - ![Portainer](https://img.shields.io/badge/-Portainer-13BEF9?style=flat-square&logo=portainer&logoColor=white) `portainer`: gestao e monitoramento dos containers/volumes/redes Docker.
 - ![Uptime Kuma](https://img.shields.io/badge/-Uptime%20Kuma-5CDD8B?style=flat-square&logo=uptimekuma&logoColor=white) `uptime-kuma`: monitoramento de disponibilidade (uptime) dos servicos do stack.
 - ![Aider](https://img.shields.io/badge/-Aider-D97757?style=flat-square) `aider` (Dev Agent): agente de desenvolvimento para geracao, edicao e revisao de codigo assistida por IA.
+- ![Watchtower](https://img.shields.io/badge/-Watchtower-326DE6?style=flat-square) `watchtower`: atualizacao automatica de imagens Docker e reinicio de containers.
+- ![LiteLLM](https://img.shields.io/badge/-LiteLLM-4A90D9?style=flat-square) `litellm`: AI gateway para roteamento de modelos e provedores de LLM.
+- ![PostgreSQL](https://img.shields.io/badge/-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) `postgres`: banco de dados para usuarios, agentes, chats e memoria.
 
 ## Pre-requisitos
 
@@ -136,6 +142,8 @@ docker volume create mycrew_open_webui_data
 docker volume create mycrew_qdrant_data
 docker volume create mycrew_portainer_data
 docker volume create mycrew_uptime_kuma_data
+docker volume create mycrew_postgres_data
+docker volume create mycrew_litellm_data
 ```
 
 ## Subir ambiente
@@ -226,6 +234,8 @@ docker compose restart python-webapp
 - Portainer (gestao Docker): `http://localhost:9000` (HTTP) ou `https://localhost:9443` (HTTPS)
 - Uptime Kuma (monitoramento): `http://localhost:3002`
 - Aider (Dev Agent): `http://localhost:8501`
+- LiteLLM: `http://localhost:4000`
+- PostgreSQL: `http://localhost:5433`
 
 > Nota: o Ollama roda na porta `11435` (nao a padrao `11434`) neste stack — ajustar integracoes/scripts externos de acordo.
 
@@ -277,12 +287,22 @@ No `.env`, configure:
 - `AIDER_MODEL=qwen2.5-coder:7b` (modelo usado via `ollama_chat/`)
 - `AIDER_NUM_CTX=16384` (tamanho de contexto)
 
+**LiteLLM (AI Gateway)**
+- `LITELLM_MASTER_KEY=sk-mycrew-litellm-master` (chave master para API)
+- `LITELLM_PORT=4000` (porta de acesso)
+- `UI_USERNAME=admin-litellm`, `UI_PASSWORD=`: credenciais para UI web
+- `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`: API keys para provedores externos (opcionais).
+
+**PostgreSQL**
+- `POSTGRES_PORT=5433` (porta externa)
+- `POSTGRES_USER=litellm`, `POSTGRES_PASSWORD=litellm_password`, `POSTGRES_DB=litellm`: credenciais do banco (usado pelo LiteLLM).
+
 **Portas (todas com defaults no compose, sobrescreva se houver conflito)**
-- `MYCREW_FRONTEND_PORT` (8081), `MYCREW_BACKEND_PORT` (8082), `OPEN_WEBUI_PORT` (3001), `OLLAMA_PORT` (11435), `QDRANT_PORT` (6333), `N8N_PORT` (5678), `DOZZLE_PORT` (8085), `PORTAINER_PORT` (9000), `PORTAINER_SSL_PORT` (9443), `KUMA_PORT` (3002), `AIDER_PORT` (8501)
+- `MYCREW_FRONTEND_PORT` (8081), `MYCREW_BACKEND_PORT` (8082), `OPEN_WEBUI_PORT` (3001), `OLLAMA_PORT` (11435), `QDRANT_PORT` (6333), `N8N_PORT` (5678), `DOZZLE_PORT` (8085), `PORTAINER_PORT` (9000), `PORTAINER_SSL_PORT` (9443), `KUMA_PORT` (3002), `AIDER_PORT` (8501), `LITELLM_PORT` (4000), `POSTGRES_PORT` (5433)
 
 **Outros**
 - `TZ=America/Sao_Paulo`
-- `PUBLIC_QDRANT_DASHBOARD`, `PUBLIC_DOZZLE`, `PUBLIC_PORTAINER`, `PUBLIC_UPTIME_KUMA`, `PUBLIC_AIDER`: URLs publicas expostas pelo backend (ja tem defaults calculados a partir das portas acima; sobrescreva se o stack rodar atras de um dominio/proxy reverso).
+- `PUBLIC_QDRANT_DASHBOARD`, `PUBLIC_DOZZLE`, `PUBLIC_PORTAINER`, `PUBLIC_UPTIME_KUMA`, `PUBLIC_AIDER`, `PUBLIC_LITELLM`: URLs publicas expostas pelo backend (ja tem defaults calculados a partir das portas acima; sobrescreva se o stack rodar atras de um dominio/proxy reverso).
 
 Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho de fluxo n8n fica indisponivel.
 
@@ -291,6 +311,13 @@ Sem os webhooks, chat e knowledge direto continuam funcionando; apenas o caminho
 - **Dozzle** (`http://localhost:8085/dozzle`): acompanha logs de todos os containers em tempo real, util para debug rapido sem precisar de `docker logs` manual.
 - **Portainer** (`http://localhost:9000`): interface de gestao Docker (containers, imagens, volumes, redes) — util para reiniciar/atualizar servicos sem linha de comando.
 - **Uptime Kuma** (`http://localhost:3002`): monitor de disponibilidade dos servicos do stack (Open WebUI, n8n, backend, etc.), com alertas configuraveis.
+- **Watchtower**: atualizacao automatica de imagens Docker e reinicio de containers (configurado comentado no compose — descomente para habilitar).
+
+## LiteLLM (AI Gateway)
+
+- **LiteLLM** (`http://localhost:4000`): AI Gateway para roteamento unificado de modelos locais (Ollama) e provedores externos (OpenAI, OpenRouter, Anthropic, Gemini, Groq).
+- A UI web permite configurar chaves de API de provedores e gerenciar modelos.
+- O banco PostgreSQL persiste configuracoes e metadata dos modelos.
 
 ## Dev Agent (Aider)
 
