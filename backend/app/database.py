@@ -98,3 +98,61 @@ def init_knowledge_tables():
             CREATE INDEX IF NOT EXISTS idx_mycrew_knowledge_source ON mycrew_knowledge_items(source);
             CREATE INDEX IF NOT EXISTS idx_mycrew_knowledge_created ON mycrew_knowledge_items(created_at DESC);
         """)
+
+
+def init_chat_tables():
+    """Initialize chat session and memory tables."""
+    with get_db_cursor(commit=True) as cur:
+        # Tabela de sessões de chat
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mycrew_chat_sessions (
+                id UUID PRIMARY KEY,
+                persona_id VARCHAR(255) NOT NULL,
+                model VARCHAR(255) DEFAULT '',
+                temperature FLOAT DEFAULT 0.7,
+                status VARCHAR(20) DEFAULT 'active',
+                total_messages INTEGER DEFAULT 0,
+                metrics JSONB DEFAULT '{}',
+                started_at TIMESTAMP DEFAULT NOW(),
+                finalized_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_persona ON mycrew_chat_sessions(persona_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_status ON mycrew_chat_sessions(status);
+        """)
+
+        # Tabela de memória extraída de conversas
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mycrew_conversation_memory (
+                id UUID PRIMARY KEY,
+                session_id UUID REFERENCES mycrew_chat_sessions(id) ON DELETE CASCADE,
+                persona_id VARCHAR(255) NOT NULL,
+                memory_type VARCHAR(50) NOT NULL,
+                title VARCHAR(500),
+                content TEXT,
+                tags JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_memory_persona ON mycrew_conversation_memory(persona_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_session ON mycrew_conversation_memory(session_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_type ON mycrew_conversation_memory(memory_type);
+        """)
+
+        # Tabela de mensagens individuais (para auditoria)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mycrew_chat_messages (
+                id SERIAL PRIMARY KEY,
+                session_id UUID REFERENCES mycrew_chat_sessions(id) ON DELETE CASCADE,
+                role VARCHAR(20) NOT NULL,
+                content TEXT,
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_messages_session ON mycrew_chat_messages(session_id);
+        """)

@@ -55,10 +55,18 @@ from .config import (
     QDRANT_TOP_K,
     QDRANT_URL,
 )
-from .database import get_db_cursor, get_redis_client, init_iot_table, init_knowledge_tables
+from .database import (
+    get_db_cursor,
+    get_redis_client,
+    init_iot_table,
+    init_knowledge_tables,
+    init_chat_tables,
+)
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    FinalizeSessionRequest,
+    FinalizeSessionResponse,
     FlowStartRequest,
     FlowStartResponse,
     IoTDeviceCreate,
@@ -66,9 +74,15 @@ from .schemas import (
     IoTDeviceUpdate,
     KnowledgeAttachRequest,
     KnowledgeSearchResponse,
+    MemoryExtractionRequest,
+    MemoryExtractionResponse,
+    SessionInfo,
     SshConnectRequest,
     SshConnectResponse,
 )
+from .chat.chat_manager import get_chat_manager
+from .chat.memory_extractor import extract_memory_from_conversation, save_memory
+from .chat.ws_chat import get_ws_handler
 
 app = FastAPI(title="MyCrew Backend", version="2.1.0")
 
@@ -1429,6 +1443,100 @@ async def ssh_terminal(websocket: WebSocket):
             pass
 
 
+# ===== Chat Session Endpoints =====
+
+
+@app.websocket("/api/chat/ws")
+async def chat_websocket(websocket: WebSocket):
+    """WebSocket para chat em tempo real com streaming de eventos e tokens."""
+    handler = get_ws_handler()
+    await handler.handle(websocket)
+
+
+@app.post("/api/chat/finalize", response_model=FinalizeSessionResponse)
+async def finalize_chat_session(payload: FinalizeSessionRequest) -> FinalizeSessionResponse:
+    """Finaliza uma sessão de chat com a opção especificada."""
+    chat_manager = get_chat_manager()
+    result = chat_manager.finalize_session(payload.session_id, payload.option)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    
+    # Se for auto_save, extrai memória
+    if payload.option == "auto_save":
+        session = chat_manager.get_session(payload.session_id)
+        if session and len(session.messages) >= 3:
+            memories = await extract_memory_from_conversation(
+                session.messages,
+                model=session.model or "llama3.2:3b",
+            )
+            save_result = await save_memory(
+                session_id=payload.session_id,
+                persona_id=session.persona_id,
+                memories=memories,
+            )
+            result["memory"] = save_result
+    
+    return FinalizeSessionResponse(**result)
+
+
+@app.get("/api/chat/sessions", response_model=list[SessionInfo])
+async def list_chat_sessions():
+    """Lista todas as sessões de chat ativas."""
+    chat_manager = get_chat_manager()
+    return chat_manager.list_active_sessions()
+
+
+@app.get("/api/chat/sessions/{session_id}", response_model=SessionInfo)
+async def get_chat_session(session_id: str):
+    """Obtém detalhes de uma sessão específica."""
+    chat_manager = get_chat_manager()
+    session = chat_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    return SessionInfo(**session.to_dict())
+
+
+@app.get("/api/agents/{persona_id}/status")
+async def agent_status(persona_id: str) -> dict[str, str]:
+    """Retorna o status atual de um agente (idle/occupied)."""
+    chat_manager = get_chat_manager()
+    status = chat_manager.get_agent_status(persona_id)
+    return {"persona_id": persona_id, "status": status}
+
+
+@app.post("/api/memory/extract")
+async def extract_conversation_memory(payload: MemoryExtractionRequest) -> MemoryExtractionResponse:
+    """Extrai memória de uma sessão de chat específica."""
+    chat_manager = get_chat_manager()
+    session = chat_manager.get_session(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    
+    memories = await extract_memory_from_conversation(
+        session.messages,
+        model=payload.model or "llama3.2:3b",
+    )
+    
+    save_result = await save_memory(
+        session_id=payload.session_id,
+        persona_id=session.persona_id,
+        memories=[{
+            "tipo": m.get("tipo", "fact"),
+            "titulo": m.get("titulo", ""),
+            "conteudo": m.get("conteudo", ""),
+            "tags": m.get("tags", []),
+        } for m in memories],
+    )
+    
+    return MemoryExtractionResponse(
+        memories=memories,
+        saved=save_result.get("saved", 0),
+        indexed=save_result.get("indexed", 0),
+        errors=save_result.get("errors", []),
+    )
+
+
 # ===== IoT Device Endpoints =====
 
 @app.on_event("startup")
@@ -1440,6 +1548,10 @@ async def startup_event():
         pass  # Table might already exist or DB not ready yet
     try:
         init_knowledge_tables()
+    except Exception:
+        pass  # Table might already exist or DB not ready yet
+    try:
+        init_chat_tables()
     except Exception:
         pass  # Table might already exist or DB not ready yet
 

@@ -16,6 +16,11 @@ const state = {
   activeFlowId: null,
   typingPersonaId: null,
   knowledgeFiles: [],
+  // Novos estados para WebSocket
+  chatWs: null,
+  currentSessionId: null,
+  pipelineActive: false,
+  timelineItems: [],
 };
 
 let knowledgeSelectedPersonaId = null;
@@ -54,9 +59,9 @@ const knowledgeResult = document.getElementById("knowledge-result");
 const flowStatus = document.getElementById("flow-status");
 const chatSwitcher = document.getElementById("chat-switcher");
 const knowledgeAgentChips = document.getElementById("knowledge-agent-chips");
-const knowledgeFilesList = document.getElementById("knowledge-files-list");
 const knowledgeTitle = document.getElementById("knowledge-title");
 const knowledgeContent = document.getElementById("knowledge-content");
+const knowledgeTags = document.getElementById("knowledge-tags");
 const knowledgeFilesInput = document.getElementById("knowledge-files");
 const knowledgeBrowse = document.getElementById("knowledge-browse");
 const knowledgeDropzone = document.getElementById("knowledge-dropzone");
@@ -73,14 +78,25 @@ const linkLitellm = document.getElementById("link-litellm");
 const linkWatchtower = document.getElementById("link-watchtower");
 const dozzleFrame = document.getElementById("dozzle-frame");
 
+// Novos elementos
+const executionPanel = document.getElementById("execution-panel");
+const epTimeline = document.getElementById("ep-timeline");
+const epMetrics = document.getElementById("ep-metrics");
+const finalizeChatBtn = document.getElementById("finalize-chat-btn");
+const finalizeModal = document.getElementById("finalize-modal");
+const finalizeModalConfirm = document.getElementById("finalize-modal-confirm");
+const finalizeSummary = document.getElementById("finalize-summary");
+const finalizeSummaryContent = document.getElementById("finalize-summary-content");
+const finalizeResult = document.getElementById("finalize-result");
+
 function esc(value) {
   var s = String(value || "");
   return s
-    .replace(/&/g, function() { return "&"; })
-    .replace(/</g, function() { return "<"; })
-    .replace(/>/g, function() { return ">"; })
-    .replace(/"/g, function() { return '"'; })
-    .replace(/'/g, function() { return "'"; });
+    .replace(/&/g, function() { return "&" + "amp;"; })
+    .replace(/</g, function() { return "&" + "lt;"; })
+    .replace(/>/g, function() { return "&" + "gt;"; })
+    .replace(/"/g, function() { return "&" + "quot;"; })
+    .replace(/'/g, function() { return "&#" + "39;"; });
 }
 
 function ensurePersonaSelected() {
@@ -141,8 +157,6 @@ function agentStatus(persona) {
 function renderKpis(data) {
   const c = data.counters || {};
   const qc = data.qdrant_collection || {};
-  // qdrant_collection agora é um objeto com { name, status, vectors_count, points_count,
-  //   segments_count, optimizer_status, online }
   const qdrantValue = qc.online
     ? `${(qc.points_count ?? 0).toLocaleString("pt-BR")} pontos`
     : "offline";
@@ -422,38 +436,6 @@ function renderKnowledgeAgentOptions() {
   });
 }
 
-async function loadKnowledgeFiles() {
-  if (!knowledgeFilesList) {
-    console.warn("knowledgeFilesList element not found");
-    return;
-  }
-  try {
-    const res = await fetch("/api/knowledge/files");
-    if (!res.ok) {
-      knowledgeFilesList.innerHTML = `<div class='model-empty'>Erro: ${res.status}</div>`;
-      return;
-    }
-    const data = await res.json();
-    const files = data.files || [];
-    if (files.length === 0) {
-      knowledgeFilesList.innerHTML = "<div class='model-empty'>Nenhum arquivo conhecido indexado.</div>";
-      return;
-    }
-    knowledgeFilesList.innerHTML = files.map(f => `
-      <div class='knowledge-file-item'>
-        <span class='file-icon'>❒</span>
-        <div class='file-info'>
-          <div class='file-name'>${esc(f.title || f.source)}</div>
-          <div class='file-meta'>${esc(f.persona_id)} · ${f.chunks || 1} chunk(s)</div>
-        </div>
-      </div>
-    `).join("");
-  } catch (err) {
-    console.error("loadKnowledgeFiles error:", err);
-    knowledgeFilesList.innerHTML = `<div class='model-empty'>Erro: ${err.message}</div>`;
-  }
-}
-
 function renderAgentContainers() {
   const empty = "<div class='model-empty'>Nenhum agente encontrado.</div>";
   personasBox.innerHTML = state.personas.length
@@ -530,38 +512,366 @@ async function loadPersonas() {
   }
 }
 
+// ===== WebSocket Chat =====
+
+function resetTimeline() {
+  state.timelineItems = [];
+  if (epTimeline) {
+    epTimeline.innerHTML = "<div class='timeline-empty'>Aguardando mensagem...</div>";
+  }
+  if (epMetrics) epMetrics.style.display = "none";
+}
+
+function addTimelineEvent(stage, label, status, durationMs, metadata) {
+  const icon = status === "done" ? "✅" : status === "error" ? "❌" : "⏳";
+  const statusClass = status === "done" ? "timeline-done" : status === "error" ? "timeline-error" : "timeline-running";
+  
+  state.timelineItems.push({ stage, label, status, durationMs, metadata });
+  
+  if (epTimeline) {
+    const emptyEl = epTimeline.querySelector(".timeline-empty");
+    if (emptyEl) emptyEl.remove();
+    
+    const durationHtml = durationMs ? `<span class='tl-duration'>${durationMs.toFixed(0)}ms</span>` : "";
+    const item = document.createElement("div");
+    item.className = `timeline-item ${statusClass}`;
+    item.innerHTML = `${icon} <span class='tl-label'>${esc(label)}</span> ${durationHtml}`;
+    epTimeline.appendChild(item);
+    epTimeline.scrollTop = epTimeline.scrollHeight;
+  }
+}
+
+function formatDuration(ms) {
+  if (!ms && ms !== 0) return "-";
+  const msVal = Number(ms);
+  if (msVal < 1000) return `${msVal.toFixed(0)}ms`;
+  const seconds = msVal / 1000;
+  if (seconds < 60) return `${msVal.toFixed(0)}ms | ${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds - minutes * 60;
+  return `${msVal.toFixed(0)}ms | ${minutes}m ${remainingSeconds.toFixed(1)}s`;
+}
+
+function updateMetrics(metrics) {
+  if (!epMetrics) return;
+  epMetrics.style.display = "";
+  
+  const setMetric = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  
+  setMetric("m-total-time", formatDuration(metrics.total_duration_ms));
+  setMetric("m-tokens-sent", metrics.tokens_sent?.toLocaleString() || "-");
+  setMetric("m-tokens-recv", metrics.tokens_received?.toLocaleString() || "-");
+  setMetric("m-docs", metrics.documents_found || "0");
+  setMetric("m-cache", metrics.redis_cache_hit ? "✅ Hit" : "❌ Miss");
+  setMetric("m-model", metrics.model_used || "-");
+  setMetric("m-temp", metrics.temperature || "-");
+  setMetric("m-latency", formatDuration(metrics.llm_latency_ms));
+  setMetric("m-provider", metrics.provider ? `${esc(metrics.provider)}` : "-");
+  setMetric("m-memory", metrics.memory_used ? "✅" : "❌");
+  setMetric("m-embeddings", metrics.embeddings_queried || "-");
+  setMetric("m-records", metrics.records_returned || "-");
+}
+
+function connectChatWebSocket(message) {
+  if (state.chatWs) {
+    state.chatWs.close();
+    state.chatWs = null;
+  }
+
+  const persona = state.selectedPersona;
+  if (!persona) return;
+
+  const wsUrl = window.location.protocol === "https:" 
+    ? `wss://${window.location.host}/api/chat/ws`
+    : `ws://${window.location.host}/api/chat/ws`;
+
+  state.pipelineActive = true;
+  resetTimeline();
+
+  const ws = new WebSocket(wsUrl);
+  state.chatWs = ws;
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: "send",
+      persona_id: persona.id,
+      message: message,
+      model: persona.model || persona.id,
+      temperature: 0.7,
+    }));
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      
+      switch (msg.type) {
+        case "session_start":
+          state.currentSessionId = msg.session_id;
+          console.log("Session started:", msg.session_id);
+          break;
+
+        case "stage":
+          addTimelineEvent(
+            msg.stage,
+            msg.label,
+            msg.status,
+            msg.metadata?.duration_ms,
+            msg.metadata
+          );
+          break;
+
+        case "token":
+          // Append token to current assistant message
+          const personaId = state.selectedPersona?.id;
+          if (personaId) {
+            const history = state.historyByPersona[personaId] || [];
+            const lastMsg = history[history.length - 1];
+            if (lastMsg && lastMsg.role === "assistant") {
+              // Check if last message is being streamed
+              if (!lastMsg._streaming) {
+                lastMsg._streaming = true;
+                lastMsg.content = msg.content;
+              } else {
+                lastMsg.content += msg.content;
+              }
+            } else {
+              history.push({ role: "assistant", content: msg.content, _streaming: true });
+            }
+            renderChat();
+          }
+          break;
+
+        case "metrics":
+          updateMetrics(msg.metrics);
+          break;
+
+        case "timeline":
+          if (msg.timeline) {
+            msg.timeline.forEach(t => {
+              addTimelineEvent(t.stage, t.label, t.status, t.duration_ms, t.metadata);
+            });
+          }
+          break;
+
+        case "done":
+          state.pipelineActive = false;
+          state.typingPersonaId = null;
+          state.currentSessionId = msg.session_id;
+          
+          // Finalize streaming message
+          const pId = state.selectedPersona?.id;
+          if (pId && msg.reply) {
+            const history = state.historyByPersona[pId] || [];
+            const lastMsg = history[history.length - 1];
+            if (lastMsg && lastMsg.role === "assistant" && lastMsg._streaming) {
+              lastMsg.content = msg.reply;
+              delete lastMsg._streaming;
+            } else {
+              history.push({ role: "assistant", content: msg.reply });
+            }
+            saveHistory();
+            renderChat();
+          }
+          break;
+
+        case "error":
+          console.error("WebSocket error:", msg.error);
+          state.pipelineActive = false;
+          state.typingPersonaId = null;
+          const errPersonaId = state.selectedPersona?.id;
+          if (errPersonaId) {
+            const history = state.historyByPersona[errPersonaId] || [];
+            history.push({ role: "assistant", content: `Erro: ${msg.error}` });
+            saveHistory();
+            renderChat();
+          }
+          break;
+
+        case "finalized":
+          state.currentSessionId = null;
+          state.pipelineActive = false;
+          if (finalizeResult) {
+            finalizeResult.style.display = "";
+            finalizeResult.textContent = JSON.stringify(msg, null, 2);
+          }
+          console.log("Session finalized:", msg);
+          break;
+      }
+    } catch (e) {
+      console.warn("WS message parse error:", e);
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+    state.pipelineActive = false;
+    state.typingPersonaId = null;
+  };
+
+  ws.onclose = () => {
+    if (state.chatWs === ws) {
+      state.chatWs = null;
+    }
+    state.pipelineActive = false;
+  };
+}
+
 async function sendChat() {
   let persona;
   try { persona = ensurePersonaSelected(); } catch (err) { alert(err.message); return; }
   const text = chatInput.value.trim();
   if (!text) return;
+  
   const personaId = persona.id;
   state.historyByPersona[personaId] = state.historyByPersona[personaId] || [];
   const history = state.historyByPersona[personaId];
+  
+  // Add user message
   history.push({ role: "user", content: text });
   chatInput.value = "";
   saveHistory();
   state.typingPersonaId = personaId;
   renderChat();
   renderAgentContainers();
+
+  // Connect via WebSocket
+  connectChatWebSocket(text);
+}
+
+// ===== Finalize Session =====
+
+function openFinalizeModal() {
+  if (!state.currentSessionId) {
+    alert("Nenhuma sessão ativa para finalizar.");
+    return;
+  }
+  
+  if (state.pipelineActive) {
+    alert("Aguarde a resposta do agente antes de finalizar.");
+    return;
+  }
+
+  if (finalizeSummary) finalizeSummary.style.display = "none";
+  if (finalizeResult) finalizeResult.style.display = "none";
+  if (finalizeModal) finalizeModal.style.display = "";
+  
+  // Default to "discard"
+  document.querySelectorAll(".finalize-option").forEach(opt => {
+    opt.classList.toggle("selected", opt.dataset.option === "discard");
+  });
+}
+
+function closeFinalizeModal() {
+  if (finalizeModal) finalizeModal.style.display = "none";
+}
+
+async function confirmFinalize() {
+  if (!state.currentSessionId) return;
+  
+  const selectedOption = document.querySelector(".finalize-option.selected");
+  const option = selectedOption ? selectedOption.dataset.option : "discard";
+  
+  if (finalizeResult) {
+    finalizeResult.style.display = "";
+    finalizeResult.textContent = "Finalizando conversa...";
+  }
+  
   try {
-    const res = await fetch("/api/chat", {
+    const res = await fetch("/api/chat/finalize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ persona_id: personaId, message: text, history, retrieve_knowledge: true }),
+      body: JSON.stringify({
+        session_id: state.currentSessionId,
+        option: option,
+      }),
     });
+    
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || data.error || "erro no chat");
-    history.push({ role: "assistant", content: data.reply || "" });
+    
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Erro ao finalizar");
+    }
+    
+    if (finalizeResult) {
+      finalizeResult.textContent = option === "discard" 
+        ? "✅ Conversa encerrada. Contexto descartado."
+        : option === "auto_save"
+          ? `✅ Conversa finalizada. Memórias extraídas: ${data.memory?.saved || 0} salvas, ${data.memory?.indexed || 0} indexadas.`
+          : `✅ Conversa finalizada. Resumo gerado para aprovação.`;
+    }
+    
+    // Se for "approve", mostra o resumo
+    if (option === "approve" && data.summary && finalizeSummary) {
+      finalizeSummary.style.display = "";
+      if (finalizeSummaryContent) finalizeSummaryContent.textContent = data.summary;
+    }
+    
+    // Reseta estado do pipeline
+    state.currentSessionId = null;
+    state.pipelineActive = false;
+    resetTimeline();
+    
+    // Fecha modal após 2 segundos
+    setTimeout(closeFinalizeModal, 2000);
+    
   } catch (err) {
-    history.push({ role: "assistant", content: `Erro: ${err.message}` });
-  } finally {
-    state.typingPersonaId = null;
-    saveHistory();
-    renderChat();
-    renderAgentContainers();
+    if (finalizeResult) {
+      finalizeResult.textContent = `❌ Erro: ${err.message}`;
+    }
   }
 }
+
+// Bind finalize modal events
+if (finalizeChatBtn) {
+  finalizeChatBtn.addEventListener("click", openFinalizeModal);
+}
+
+document.querySelectorAll(".finalize-option").forEach(opt => {
+  opt.addEventListener("click", () => {
+    document.querySelectorAll(".finalize-option").forEach(o => o.classList.remove("selected"));
+    opt.classList.add("selected");
+  });
+});
+
+document.getElementById("finalize-modal-close")?.addEventListener("click", closeFinalizeModal);
+document.getElementById("finalize-modal-cancel")?.addEventListener("click", closeFinalizeModal);
+if (finalizeModal) {
+  finalizeModal.addEventListener("click", (e) => {
+    if (e.target === finalizeModal) closeFinalizeModal();
+  });
+}
+document.getElementById("finalize-modal-confirm")?.addEventListener("click", confirmFinalize);
+
+// Toggle execution panel
+document.getElementById("toggle-execution-panel")?.addEventListener("click", () => {
+  if (executionPanel) {
+    executionPanel.classList.toggle("collapsed");
+    const toggle = document.getElementById("toggle-execution-panel");
+    if (toggle) toggle.textContent = executionPanel.classList.contains("collapsed") ? "▷" : "▽";
+  }
+});
+
+// Toggle metrics
+document.getElementById("toggle-metrics")?.addEventListener("click", () => {
+  const body = document.getElementById("ep-metrics-body");
+  const toggle = document.getElementById("toggle-metrics");
+  if (body) body.style.display = body.style.display === "none" ? "" : "none";
+  if (toggle) toggle.textContent = body?.style.display === "none" ? "▷" : "▽";
+});
+
+// ===== Legacy sendChat (kept for backward compatibility) =====
+
+async function sendChatViaFlow() {
+  const text = chatInput.value.trim();
+  if (!text) { alert("Digite a mensagem antes de enviar via n8n."); return; }
+  await startFlow("chat", text, { channel: "frontend" });
+}
+
+// ===== Knowledge Functions =====
 
 function renderKnowledgeFiles() {
   if (!knowledgeFileList) return;
@@ -588,6 +898,8 @@ async function attachKnowledge() {
   const title = String(knowledgeTitle?.value || "").trim();
   const content = String(knowledgeContent?.value || "").trim();
   const files = state.knowledgeFiles || [];
+  const tagsRaw = String(knowledgeTags?.value || "").trim();
+  const tags = tagsRaw ? tagsRaw.split(",").map(t => t.trim()).filter(t => t) : [];
   if (!files.length && !content) { alert("Selecione arquivos ou cole um conteúdo."); return; }
   const items = [];
   for (const f of files) {
@@ -604,7 +916,7 @@ async function attachKnowledge() {
       const res = await fetch("/api/knowledge/attach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persona_id: personaId, title: it.title, source: it.source, content: it.content }),
+        body: JSON.stringify({ persona_id: personaId, title: it.title, source: it.source, content: it.content, tags }),
       });
       let data;
       try {
@@ -669,12 +981,6 @@ async function pollFlowStatus(flowId) {
   } catch (err) {
     setResult(flowStatus, `Erro ao consultar fluxo: ${err.message}`);
   }
-}
-
-async function sendChatViaFlow() {
-  const text = chatInput.value.trim();
-  if (!text) { alert("Digite a mensagem antes de enviar via n8n."); return; }
-  await startFlow("chat", text, { channel: "frontend" });
 }
 
 async function sendKnowledgeViaFlow() {
@@ -1138,5 +1444,4 @@ loadModels();
 loadPersonas();
 renderChat();
 loadIoTDevices();
-loadKnowledgeFiles();
 setInterval(loadStatus, 20000);

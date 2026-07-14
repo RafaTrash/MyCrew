@@ -103,3 +103,60 @@ class IoTDeviceResponse(IoTDeviceBase):
     last_connection: Optional[str] = None
     created_at: str
     updated_at: str
+
+
+# ===== Chat Session Schemas =====
+
+class FinalizeSessionRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    option: str = Field(default="discard", pattern="^(discard|auto_save|approve)$")
+
+
+class FinalizeSessionResponse(BaseModel):
+    session_id: str
+    persona_id: str
+    status: str
+    option: str
+    message_count: int
+    finalized_at: str
+    memory: Optional[dict[str, Any]] = None
+    summary: Optional[str] = None
+    requires_approval: bool = False
+
+
+class SessionInfo(BaseModel):
+    session_id: str
+    persona_id: str
+    model: str
+    temperature: float
+    status: str
+    message_count: int
+    started_at: str
+    finalized_at: Optional[str] = None
+    metrics: dict[str, Any] = {}
+
+
+class AgentStatusResponse(BaseModel):
+    persona_id: str
+    status: str  # idle, occupied
+
+
+# ===== Memory Schemas =====
+
+class MemoryItem(BaseModel):
+    tipo: str = Field(pattern="^(preference|decision|knowledge|documentation|fact)$")
+    titulo: str
+    conteudo: str
+    tags: list[str] = []
+
+
+class MemoryExtractionRequest(BaseModel):
+    session_id: str
+    model: Optional[str] = "llama3.2:3b"
+
+
+class MemoryExtractionResponse(BaseModel):
+    memories: list[MemoryItem] = []
+    saved: int = 0
+    indexed: int = 0
+    errors: list[str] = []
