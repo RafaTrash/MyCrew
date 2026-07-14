@@ -222,6 +222,50 @@ async def check_tcp_service(host: str, port: int, service_name: str = "") -> dic
         return {"ok": False, "error": str(exc)}
 
 
+async def fetch_qdrant_collection_info() -> dict[str, Any]:
+    """Fetch real-time Qdrant collection info: status, points count, segments, optimizer status."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}")
+            if resp.status_code == 200:
+                result = resp.json().get("result", {})
+                status = (result.get("status") or "").lower()
+                vectors_count = int(result.get("vectors_count") or 0)
+                points_count = int(result.get("points_count") or 0)
+                segments_count = int(result.get("segments_count") or 0)
+                optimizer_status = (result.get("optimizer_status") or "unknown").lower()
+                return {
+                    "name": QDRANT_COLLECTION,
+                    "status": status if status in ("green", "yellow", "red") else "unknown",
+                    "vectors_count": vectors_count,
+                    "points_count": points_count,
+                    "segments_count": segments_count,
+                    "optimizer_status": optimizer_status,
+                    "online": True,
+                }
+            return {
+                "name": QDRANT_COLLECTION,
+                "status": "offline",
+                "vectors_count": 0,
+                "points_count": 0,
+                "segments_count": 0,
+                "optimizer_status": "unknown",
+                "online": False,
+                "error": f"HTTP {resp.status_code}",
+            }
+    except Exception as exc:
+        return {
+            "name": QDRANT_COLLECTION,
+            "status": "offline",
+            "vectors_count": 0,
+            "points_count": 0,
+            "segments_count": 0,
+            "optimizer_status": "unknown",
+            "online": False,
+            "error": str(exc),
+        }
+
+
 async def fetch_models() -> list[str]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -429,6 +473,8 @@ async def ollama_embedding(text: str, model: str = EMBEDDING_MODEL) -> list[floa
 
 
 async def ensure_qdrant_collection(vector_size: int) -> None:
+    import logging
+    logger = logging.getLogger("mycrew.knowledge")
     async with httpx.AsyncClient(timeout=8.0) as client:
         get_resp = await client.get(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}")
         if get_resp.status_code == 200:
@@ -447,9 +493,21 @@ async def ensure_qdrant_collection(vector_size: int) -> None:
                 existing_size = None
 
             if existing_size == vector_size:
+                logger.info("Collection %s already exists with size %d", QDRANT_COLLECTION, vector_size)
                 return
             # Dimensao divergente na colecao dedicada do MyCrew: recria do zero.
-            await client.delete(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}")
+            logger.warning(
+                "Collection %s exists but size mismatch (existing=%s, needed=%d). Recreating.",
+                QDRANT_COLLECTION, existing_size, vector_size,
+            )
+            del_resp = await client.delete(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}")
+            if del_resp.status_code not in (200, 204):
+                logger.warning("Delete collection returned %d: %s", del_resp.status_code, del_resp.text)
+        else:
+            logger.info(
+                "Collection %s not found (status=%d). Creating new one with size %d.",
+                QDRANT_COLLECTION, get_resp.status_code, vector_size,
+            )
 
         create_payload = {
             "vectors": {
@@ -463,41 +521,61 @@ async def ensure_qdrant_collection(vector_size: int) -> None:
             headers={"Content-Type": "application/json"},
         )
         put_resp.raise_for_status()
+        logger.info("Collection %s created/updated with size %d", QDRANT_COLLECTION, vector_size)
 
 
 async def upsert_knowledge_points(persona_id: str, title: str, source: str, chunks: list[str], tags: list[str]) -> dict[str, Any]:
+    import logging
+    logger = logging.getLogger("mycrew.knowledge")
     total = 0
     point_ids = []
+    errors = []
 
     for index, chunk in enumerate(chunks):
-        vector = await ollama_embedding(chunk)
-        await ensure_qdrant_collection(len(vector))
-        point_id = str(uuid4())
-        point = {
-            "id": point_id,
-            "vector": vector,
-            "payload": {
-                "persona_id": persona_id,
-                "title": title,
-                "source": source,
-                "tags": tags,
-                "content": chunk,
-                "chunk_index": index,
-                "created_at": now_iso(),
-            },
-        }
-        point_ids.append(point_id)
-        upsert_body = {"points": [point], "wait": True}
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.put(
-                f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points",
-                content=json.dumps(upsert_body).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            resp.raise_for_status()
-        total += 1
+        try:
+            vector = await ollama_embedding(chunk)
+            await ensure_qdrant_collection(len(vector))
+            point_id = str(uuid4())
+            point = {
+                "id": point_id,
+                "vector": vector,
+                "payload": {
+                    "persona_id": persona_id,
+                    "title": title,
+                    "source": source,
+                    "tags": tags,
+                    "content": chunk,
+                    "chunk_index": index,
+                    "created_at": now_iso(),
+                },
+            }
+            point_ids.append(point_id)
+            upsert_body = {"points": [point], "wait": True}
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                resp = await client.put(
+                    f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points",
+                    content=json.dumps(upsert_body).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                resp.raise_for_status()
+            total += 1
+        except HTTPException:
+            raise
+        except Exception as exc:
+            errors.append(f"chunk {index}: {exc}")
+            logger.error("Failed to upsert chunk %d for persona=%s: %s", index, persona_id, exc)
 
-    # Save metadata to PostgreSQL
+    if not total and errors:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Nenhum chunk foi inserido no Qdrant. Erros: {'; '.join(errors[:3])}",
+        )
+
+    qdrant_summary = {"inserted_points": total, "collection": QDRANT_COLLECTION, "point_ids": point_ids}
+    if errors:
+        qdrant_summary["warnings"] = errors
+
+    # Save metadata to PostgreSQL (best-effort)
     try:
         import json as json_module
         with get_db_cursor(commit=True) as cur:
@@ -514,20 +592,27 @@ async def upsert_knowledge_points(persona_id: str, title: str, source: str, chun
                     idx,
                     chunks[idx][:200] if len(chunks[idx]) > 200 else chunks[idx],
                 ))
-    except Exception:
-        pass  # Don't fail the request if metadata save fails
+        logger.info("Metadata saved to PostgreSQL for %d chunks (persona=%s)", len(point_ids), persona_id)
+    except Exception as exc:
+        logger.warning("Failed to save metadata to PostgreSQL (persona=%s): %s", persona_id, exc)
 
-    # Cache the result in Redis
+    # Cache the result in Redis (best-effort)
     try:
         redis_client = get_redis_client()
         cache_key = f"knowledge:last_attachments:{persona_id}"
         redis_client.lpush(cache_key, json.dumps({"title": title, "source": source, "chunks": total, "timestamp": now_iso()}))
         redis_client.ltrim(cache_key, 0, 9)  # Keep last 10 items
         redis_client.expire(cache_key, 86400)  # 24h TTL
-    except Exception:
-        pass  # Don't fail if Redis is unavailable
+        logger.info("Cache updated in Redis for persona=%s", persona_id)
+    except Exception as exc:
+        logger.warning("Failed to cache in Redis (persona=%s): %s", persona_id, exc)
 
-    return {"inserted_points": total, "collection": QDRANT_COLLECTION, "point_ids": point_ids}
+    return {
+        "inserted_points": total,
+        "collection": QDRANT_COLLECTION,
+        "point_ids": point_ids,
+        "errors": errors if errors else [],
+    }
 
 
 async def search_knowledge(persona_id: str, query_text: str, top_k: int = QDRANT_TOP_K) -> list[dict[str, Any]]:
@@ -800,10 +885,11 @@ async def status() -> dict[str, Any]:
         else:
             health_tasks.append(check_service(item["health"]))
 
-    health_results, models, openwebui_agents = await asyncio.gather(
+    health_results, models, openwebui_agents, qdrant_info = await asyncio.gather(
         asyncio.gather(*health_tasks),
         fetch_models(),
         fetch_openwebui_agents(),
+        fetch_qdrant_collection_info(),
     )
 
     services: list[dict[str, Any]] = []
@@ -841,7 +927,7 @@ async def status() -> dict[str, Any]:
             "models_total": len(models),
             "openwebui_agents": len(openwebui_agents),
         },
-        "qdrant_collection": QDRANT_COLLECTION,
+        "qdrant_collection": qdrant_info,
         "updated_at": now_iso(),
     }
 
@@ -876,25 +962,41 @@ async def agent_doc(persona_id: str = Query(..., min_length=1)) -> dict[str, Any
 
 @app.post("/api/knowledge/attach")
 async def knowledge_attach(payload: KnowledgeAttachRequest) -> dict[str, Any]:
-    chunks = chunk_text(payload.content)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="conteudo vazio apos normalizacao")
+    import logging
+    logger = logging.getLogger("mycrew.knowledge")
+    try:
+        chunks = chunk_text(payload.content)
+        if not chunks:
+            raise HTTPException(status_code=400, detail="conteudo vazio apos normalizacao")
 
-    result = await upsert_knowledge_points(
-        persona_id=payload.persona_id.strip().lower(),
-        title=payload.title.strip(),
-        source=payload.source.strip() or "manual",
-        chunks=chunks,
-        tags=payload.tags,
-    )
+        logger.info(
+            "Attaching knowledge: persona=%s title=%s source=%s chunks=%d",
+            payload.persona_id, payload.title, payload.source, len(chunks),
+        )
 
-    return {
-        "ok": True,
-        "persona_id": payload.persona_id.strip().lower(),
-        "chunks": len(chunks),
-        "qdrant": result,
-        "timestamp": now_iso(),
-    }
+        result = await upsert_knowledge_points(
+            persona_id=payload.persona_id.strip().lower(),
+            title=payload.title.strip(),
+            source=payload.source.strip() or "manual",
+            chunks=chunks,
+            tags=payload.tags,
+        )
+
+        return {
+            "ok": True,
+            "persona_id": payload.persona_id.strip().lower(),
+            "chunks": len(chunks),
+            "qdrant": result,
+            "timestamp": now_iso(),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Falha ao anexar conhecimento para persona=%s", payload.persona_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao anexar conhecimento: {str(exc)}",
+        )
 
 
 @app.get("/api/knowledge/files")

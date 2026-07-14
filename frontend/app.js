@@ -140,17 +140,26 @@ function agentStatus(persona) {
 
 function renderKpis(data) {
   const c = data.counters || {};
+  const qc = data.qdrant_collection || {};
+  // qdrant_collection agora é um objeto com { name, status, vectors_count, points_count,
+  //   segments_count, optimizer_status, online }
+  const qdrantValue = qc.online
+    ? `${(qc.points_count ?? 0).toLocaleString("pt-BR")} pontos`
+    : "offline";
+  const qdrantFoot = qc.online
+    ? `${esc(qc.name)} · ${qc.segments_count || 0} segmentos · ${esc(qc.status)}`
+    : "memória vetorial";
   const cards = [
     { cls: "violet", label: "Agentes", value: String(c.openwebui_agents ?? 0), foot: "OpenWebUI + locais" },
     { cls: "green", label: "Serviços online", value: `${c.services_online ?? 0}<small>/${c.services_total ?? 0}</small>`, foot: "infra da stack" },
     { cls: "blue", label: "Modelos", value: String(c.models_total ?? 0), foot: "Ollama" },
-    { cls: "amber", label: "Coleção Qdrant", value: esc(data.qdrant_collection || "-"), foot: "memória vetorial", small: true },
+    { cls: "amber", label: "Coleção Qdrant", value: qdrantValue, foot: qdrantFoot },
   ];
   kpiRow.innerHTML = cards.map((k) => `
       <div class='kpi ${k.cls}'>
         <div class='kpi-label'>${esc(k.label)}</div>
-        <div class='kpi-value ${k.small ? "mono" : ""}' style='${k.small ? "font-size:16px" : ""}'>${k.value}</div>
-        <div class='kpi-foot'>${esc(k.foot)}</div>
+        <div class='kpi-value'>${k.value}</div>
+        <div class='kpi-foot'>${k.foot}</div>
       </div>`).join("");
 }
 
@@ -374,11 +383,15 @@ function selectPersonaByIndex(index, jumpToChat = false) {
 // Knowledge Agent Chip Functions
 function knowledgeAgentChipHtml(persona, index) {
   const selected = knowledgeSelectedPersonaId === persona.id ? "selected" : "";
-  return `<button class='knowledge-agent-chip ${selected}' data-kagent='${index}' title='${esc(persona.nome)}'>
-    ${avatarHtml(persona, "xs")}
+  return `<button class='knowledge-agent-chip ${selected}' data-kagent='${index}' title='${esc(persona.nome)} · ${esc(persona.papel || "Agente")}'>
+    ${avatarHtml(persona, "sm")}
     <div class='chip-info'>
       <span class='chip-name'>${esc(persona.nome)}</span>
+      <span class='chip-role'>${esc(persona.papel || "Agente")}</span>
       <span class='chip-model' title='${esc(persona.model || "")}'>◆ ${esc(persona.model || "modelo")}</span>
+    </div>
+    <div class='chip-badges'>
+      <span class='src-badge'>${esc(persona.source || "open-webui")}</span>
     </div>
   </button>`;
 }
@@ -593,7 +606,13 @@ async function attachKnowledge() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persona_id: personaId, title: it.title, source: it.source, content: it.content }),
       });
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
       if (!res.ok) throw new Error(data.detail || data.error || "falha ao anexar");
       ok += 1; totalChunks += data.chunks || 0;
     } catch (err) { errors.push(`${it.source}: ${err.message}`); }

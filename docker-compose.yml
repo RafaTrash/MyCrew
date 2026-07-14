@@ -167,6 +167,8 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     # Porta restrita ao loopback: acessivel via localhost na propria maquina,
     # mas nao exposta na rede/LAN. O acesso "oficial" do stack ao LiteLLM
     # deve ser via rede interna (ai_net), pelo python-webapp/n8n/open-webui.
@@ -184,6 +186,11 @@ services:
       - STORE_MODEL_IN_DB=True
       - UI_USERNAME=${UI_USERNAME:-admin-litellm}
       - UI_PASSWORD=${UI_PASSWORD:?Defina UI_PASSWORD no .env}
+      # Redis interno (rede ai_net), usado para cache de respostas do
+      # LiteLLM. Acessa pelo nome do servico na rede Docker, nao pela
+      # porta publicada em 127.0.0.1.
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
       - litellm_data:/app/data
@@ -406,7 +413,6 @@ services:
       - "--yes-always"
       - "frontend/index.html"
       - "frontend/app.js"
-      - "app.js"
     working_dir: /repo
     volumes:
       - ./:/repo

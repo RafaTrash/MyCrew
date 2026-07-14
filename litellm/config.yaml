@@ -125,6 +125,19 @@ litellm_settings:
   fallbacks:
     - openai/gpt-4o-mini: [openrouter/google/gemini-2.0-flash-001, groq/llama-3.1-8b-instant]
     - openrouter/anthropic/claude-3.5-sonnet: [openrouter/google/gemini-2.0-flash-001, groq/llama-3.3-70b-versatile]
+  # Cache de respostas usando o Redis do stack (servico "redis" na ai_net).
+  # Evita reprocessar a mesma pergunta/prompt repetido, economizando
+  # tokens/custo real nas chamadas para os provedores pagos.
+  cache: true
+  cache_params:
+    type: redis
+    host: os.environ/REDIS_HOST
+    port: os.environ/REDIS_PORT
+    ttl: 3600 # segundos que uma resposta fica cacheada (1h). Ajuste conforme o caso de uso.
+    # Por padrao o LiteLLM cacheia por match exato de prompt+parametros.
+    # Bom para perguntas repetidas identicas; nao cacheia variações de
+    # frase com o mesmo significado (isso seria cache semantico, feature
+    # separada e mais avancada, nao configurada aqui).
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -147,6 +160,10 @@ router_settings:
   context_window_fallbacks:
     - openai/gpt-4o-mini: [openrouter/google/gemini-2.0-flash-001]
   cooldown_time: 30
+  # Redis do router_settings e diferente do cache configurado acima em
+  # litellm_settings: esse aqui e usado para coordenar rate-limit/estado
+  # entre MULTIPLAS instancias do LiteLLM rodando em paralelo. Como o
+  # stack roda uma unica instancia, deixamos null (nao e necessario).
   redis_host: null
   redis_port: null
   redis_password: null
