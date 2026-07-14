@@ -24,7 +24,7 @@ class ChatResponse(BaseModel):
 
 
 class KnowledgeAttachRequest(BaseModel):
-    persona_id: str
+    file_path: str = Field(..., description="Path to the knowledge file")
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
     source: str = "manual"
