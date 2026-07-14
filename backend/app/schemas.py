@@ -24,11 +24,11 @@ class ChatResponse(BaseModel):
 
 
 class KnowledgeAttachRequest(BaseModel):
-    file_path: str = Field(..., description="Path to the knowledge file")
-    title: str = Field(min_length=1)
-    content: str = Field(min_length=1)
-    source: str = "manual"
-    tags: list[str] = []
+    persona_id: str = Field(..., min_length=1)
+    title: str = Field(default="", description="Optional title for the knowledge content")
+    source: str = Field(default="manual", description="Source identifier")
+    content: str = Field(min_length=1, description="Knowledge content to be indexed")
+    tags: list[str] = Field(default=[], description="Optional tags for categorization")
 
 
 class KnowledgeSearchResponse(BaseModel):

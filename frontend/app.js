@@ -18,6 +18,8 @@ const state = {
   knowledgeFiles: [],
 };
 
+let knowledgeSelectedPersonaId = null;
+
 function saveHistory() {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(state.historyByPersona));
@@ -51,7 +53,8 @@ const chatStatus = document.getElementById("chat-status");
 const knowledgeResult = document.getElementById("knowledge-result");
 const flowStatus = document.getElementById("flow-status");
 const chatSwitcher = document.getElementById("chat-switcher");
-const knowledgeAgent = document.getElementById("knowledge-agent");
+const knowledgeAgentChips = document.getElementById("knowledge-agent-chips");
+const knowledgeFilesList = document.getElementById("knowledge-files-list");
 const knowledgeTitle = document.getElementById("knowledge-title");
 const knowledgeContent = document.getElementById("knowledge-content");
 const knowledgeFilesInput = document.getElementById("knowledge-files");
@@ -368,6 +371,100 @@ function selectPersonaByIndex(index, jumpToChat = false) {
   }
 }
 
+// Knowledge Agent Chip Functions
+function knowledgeAgentChipHtml(persona, index) {
+  const selected = knowledgeSelectedPersonaId === persona.id ? "selected" : "";
+  return `<button class='knowledge-agent-chip ${selected}' data-kagent='${index}' title='${esc(persona.nome)}'>
+    ${avatarHtml(persona, "xs")}
+    <div class='chip-info'>
+      <span class='chip-name'>${esc(persona.nome)}</span>
+      <span class='chip-model' title='${esc(persona.model || "")}'>◆ ${esc(persona.model || "modelo")}</span>
+    </div>
+  </button>`;
+}
+
+function renderKnowledgeAgentOptions() {
+  if (!knowledgeAgentChips) {
+    console.warn("knowledgeAgentChips element not found");
+    return;
+  }
+  if (!state.personas.length) {
+    knowledgeAgentChips.innerHTML = "<div class='model-empty'>Carregando agentes...</div>";
+    return;
+  }
+  knowledgeAgentChips.innerHTML = state.personas.map((p, i) => knowledgeAgentChipHtml(p, i)).join("");
+  
+  // Bind click events to agent chips
+  knowledgeAgentChips.querySelectorAll(".knowledge-agent-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const idx = Number(chip.getAttribute("data-kagent"));
+      const persona = state.personas[idx];
+      if (persona) {
+        knowledgeSelectedPersonaId = persona.id;
+        renderKnowledgeAgentOptions(); // re-render to update selection
+        if (knowledgeTitle) knowledgeTitle.value = "";
+        console.log("Selected knowledge agent:", persona.nome, persona.id);
+      }
+    });
+  });
+}
+
+async function loadKnowledgeFiles() {
+  if (!knowledgeFilesList) {
+    console.warn("knowledgeFilesList element not found");
+    return;
+  }
+  try {
+    const res = await fetch("/api/knowledge/files");
+    if (!res.ok) {
+      knowledgeFilesList.innerHTML = `<div class='model-empty'>Erro: ${res.status}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const files = data.files || [];
+    if (files.length === 0) {
+      knowledgeFilesList.innerHTML = "<div class='model-empty'>Nenhum arquivo conhecido indexado.</div>";
+      return;
+    }
+    knowledgeFilesList.innerHTML = files.map(f => `
+      <div class='knowledge-file-item'>
+        <span class='file-icon'>❒</span>
+        <div class='file-info'>
+          <div class='file-name'>${esc(f.title || f.source)}</div>
+          <div class='file-meta'>${esc(f.persona_id)} · ${f.chunks || 1} chunk(s)</div>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    console.error("loadKnowledgeFiles error:", err);
+    knowledgeFilesList.innerHTML = `<div class='model-empty'>Erro: ${err.message}</div>`;
+  }
+}
+
+function renderAgentContainers() {
+  const empty = "<div class='model-empty'>Nenhum agente encontrado.</div>";
+  personasBox.innerHTML = state.personas.length
+    ? state.personas.map((p, i) => agentCardHtml(p, i)).join("")
+    : empty;
+  if (agentsRail) {
+    agentsRail.innerHTML = state.personas.length
+      ? state.personas.map((p, i) => railRowHtml(p, i)).join("")
+      : empty;
+  }
+  if (agentsRailCount) agentsRailCount.textContent = String(state.personas.length);
+  if (chatSwitcher) chatSwitcher.innerHTML = state.personas.map((p, i) => chatChipHtml(p, i)).join("");
+  renderKnowledgeAgentOptions();
+  document.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      selectPersonaByIndex(Number(btn.getAttribute("data-open")), true);
+    });
+  });
+  document.querySelectorAll(".agent-card").forEach((card) => {
+    card.addEventListener("click", () => selectPersonaByIndex(Number(card.getAttribute("data-index")), false));
+  });
+}
+
 async function loadStatus() {
   try {
     const res = await fetch("/api/status");
@@ -399,38 +496,6 @@ async function loadModels() {
   }
 }
 
-function renderAgentContainers() {
-  const empty = "<div class='model-empty'>Nenhum agente encontrado.</div>";
-  personasBox.innerHTML = state.personas.length
-    ? state.personas.map((p, i) => agentCardHtml(p, i)).join("")
-    : empty;
-  if (agentsRail) {
-    agentsRail.innerHTML = state.personas.length
-      ? state.personas.map((p, i) => railRowHtml(p, i)).join("")
-      : empty;
-  }
-  if (agentsRailCount) agentsRailCount.textContent = String(state.personas.length);
-  if (chatSwitcher) chatSwitcher.innerHTML = state.personas.map((p, i) => chatChipHtml(p, i)).join("");
-  renderKnowledgeAgentOptions();
-  document.querySelectorAll("[data-open]").forEach((btn) => {
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      selectPersonaByIndex(Number(btn.getAttribute("data-open")), true);
-    });
-  });
-  document.querySelectorAll(".agent-card").forEach((card) => {
-    card.addEventListener("click", () => selectPersonaByIndex(Number(card.getAttribute("data-index")), false));
-  });
-}
-
-function renderKnowledgeAgentOptions() {
-  if (!knowledgeAgent) return;
-  const current = knowledgeAgent.value || state.selectedPersona?.id || "";
-  knowledgeAgent.innerHTML = state.personas.map((p) => `<option value='${esc(p.id)}'>${esc(p.nome)} · ${esc(p.model || "modelo")}</option>`).join("");
-  const has = state.personas.some((p) => p.id === current);
-  knowledgeAgent.value = has ? current : state.personas[0]?.id || "";
-}
-
 async function loadPersonas() {
   personasBox.innerHTML = "<div class='model-empty'>Carregando agentes...</div>";
   try {
@@ -438,6 +503,7 @@ async function loadPersonas() {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
     state.personas = data.personas || [];
+    console.log("Loaded personas:", state.personas.length);
     renderAgentContainers();
     if (!state.personas.length) return;
     let storedId = "";
@@ -446,6 +512,7 @@ async function loadPersonas() {
     const idx = state.personas.findIndex((p) => p.id === targetId);
     selectPersonaByIndex(idx >= 0 ? idx : 0, false);
   } catch (err) {
+    console.error("loadPersonas error:", err);
     personasBox.innerHTML = `<div class='model-empty'>Erro ao carregar agentes: ${esc(err.message)}</div>`;
   }
 }
@@ -503,7 +570,7 @@ function addKnowledgeFiles(fileList) {
 }
 
 async function attachKnowledge() {
-  const personaId = knowledgeAgent?.value || state.selectedPersona?.id || "";
+  const personaId = knowledgeSelectedPersonaId || state.selectedPersona?.id || "";
   if (!personaId) { alert("Selecione um agente."); return; }
   const title = String(knowledgeTitle?.value || "").trim();
   const content = String(knowledgeContent?.value || "").trim();
@@ -1052,4 +1119,5 @@ loadModels();
 loadPersonas();
 renderChat();
 loadIoTDevices();
+loadKnowledgeFiles();
 setInterval(loadStatus, 20000);

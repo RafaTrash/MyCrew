@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=7" />
+  <link rel="stylesheet" href="/styles.css?v=8" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -144,39 +144,54 @@
 
         <!-- KNOWLEDGE -->
         <section class="page" id="page-knowledge">
-          <div class="card">
-            <div class="card-head">
-              <h3>Retroalimentar conhecimento</h3>
-              <p class="muted">Indexado no Qdrant por agente</p>
-            </div>
-            <div class="form-grid">
-              <label class="field">
-                <span class="field-label">Agente</span>
-                <select id="knowledge-agent"></select>
-              </label>
-              <label class="field">
-                <span class="field-label">Título (opcional p/ arquivos)</span>
-                <input id="knowledge-title" placeholder="Ex: Documentação do stack" />
-              </label>
-            </div>
+          <div class="knowledge-layout">
+            <div class="knowledge-main">
+              <div class="card">
+                <div class="card-head">
+                  <h3>Retroalimentar conhecimento</h3>
+                  <p class="muted">Indexado no Qdrant por agente · Metadados em PostgreSQL · Cache Redis</p>
+                </div>
 
-            <div class="file-drop" id="knowledge-dropzone">
-              <input type="file" id="knowledge-files" multiple hidden
-                accept=".md,.txt,.json,.csv,.yml,.yaml,.log,.py,.js,.ts,.html,.css,.env,.sh,.xml,.ini,.conf,.toml" />
-              <div class="fd-inner">
-                <span class="fd-icon">❒</span>
-                <p>Arraste arquivos aqui ou <button type="button" id="knowledge-browse" class="link-btn">selecione do computador</button></p>
-                <span class="fd-hint">Aceita arquivos de texto (.md, .txt, .json, .yml, .csv, código, etc)</span>
+                <div class="knowledge-agent-selector">
+                  <span class="field-label">Selecione um agente para anexar conhecimento:</span>
+                  <div id="knowledge-agent-chips" class="agent-chips-container"></div>
+                </div>
+
+                <div class="form-grid">
+                  <label class="field">
+                    <span class="field-label">Título (opcional p/ arquivos)</span>
+                    <input id="knowledge-title" placeholder="Ex: Documentação do stack" />
+                  </label>
+                </div>
+
+                <div class="file-drop" id="knowledge-dropzone">
+                  <input type="file" id="knowledge-files" multiple hidden
+                    accept=".md,.txt,.json,.csv,.yml,.yaml,.log,.py,.js,.ts,.html,.css,.env,.sh,.xml,.ini,.conf,.toml" />
+                  <div class="fd-inner">
+                    <span class="fd-icon">❒</span>
+                    <p>Arraste arquivos aqui ou <button type="button" id="knowledge-browse" class="link-btn">selecione do computador</button></p>
+                    <span class="fd-hint">Aceita arquivos de texto (.md, .txt, .json, .yml, .csv, código, etc)</span>
+                  </div>
+                  <div id="knowledge-file-list" class="file-list"></div>
+                </div>
+
+                <textarea id="knowledge-content" class="knowledge-content" placeholder="...ou cole o conteúdo aqui (resumo de conversa, procedimento, documento)"></textarea>
+                <div class="panel-actions">
+                  <button id="attach-knowledge" class="btn">Anexar no Qdrant</button>
+                  <button id="attach-knowledge-flow" class="btn secondary">Disparar fluxo n8n</button>
+                </div>
+                <div id="knowledge-result" class="result-box mono"></div>
               </div>
-              <div id="knowledge-file-list" class="file-list"></div>
             </div>
 
-            <textarea id="knowledge-content" class="knowledge-content" placeholder="...ou cole o conteúdo aqui (resumo de conversa, procedimento, documento)"></textarea>
-            <div class="panel-actions">
-              <button id="attach-knowledge" class="btn">Anexar no Qdrant</button>
-              <button id="attach-knowledge-flow" class="btn secondary">Disparar fluxo n8n</button>
-            </div>
-            <div id="knowledge-result" class="result-box mono"></div>
+            <aside class="card knowledge-sidebar">
+              <div class="card-head">
+                <h3>Arquivos conhecidos</h3>
+              </div>
+              <div id="knowledge-files-list" class="knowledge-files-list">
+                <div class="model-empty">Carregando...</div>
+              </div>
+            </aside>
           </div>
         </section>
 

@@ -55,7 +55,7 @@ from .config import (
     QDRANT_TOP_K,
     QDRANT_URL,
 )
-from .database import get_db_cursor, init_iot_table
+from .database import get_db_cursor, get_redis_client, init_iot_table, init_knowledge_tables
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -467,12 +467,14 @@ async def ensure_qdrant_collection(vector_size: int) -> None:
 
 async def upsert_knowledge_points(persona_id: str, title: str, source: str, chunks: list[str], tags: list[str]) -> dict[str, Any]:
     total = 0
+    point_ids = []
 
     for index, chunk in enumerate(chunks):
         vector = await ollama_embedding(chunk)
         await ensure_qdrant_collection(len(vector))
+        point_id = str(uuid4())
         point = {
-            "id": str(uuid4()),
+            "id": point_id,
             "vector": vector,
             "payload": {
                 "persona_id": persona_id,
@@ -484,6 +486,7 @@ async def upsert_knowledge_points(persona_id: str, title: str, source: str, chun
                 "created_at": now_iso(),
             },
         }
+        point_ids.append(point_id)
         upsert_body = {"points": [point], "wait": True}
         async with httpx.AsyncClient(timeout=12.0) as client:
             resp = await client.put(
@@ -494,7 +497,37 @@ async def upsert_knowledge_points(persona_id: str, title: str, source: str, chun
             resp.raise_for_status()
         total += 1
 
-    return {"inserted_points": total, "collection": QDRANT_COLLECTION}
+    # Save metadata to PostgreSQL
+    try:
+        import json as json_module
+        with get_db_cursor(commit=True) as cur:
+            for idx, point_id in enumerate(point_ids):
+                cur.execute("""
+                    INSERT INTO mycrew_knowledge_items (persona_id, qdrant_point_id, title, source, tags, chunk_index, content_preview)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    persona_id,
+                    point_id,
+                    title,
+                    source,
+                    json_module.dumps(tags),
+                    idx,
+                    chunks[idx][:200] if len(chunks[idx]) > 200 else chunks[idx],
+                ))
+    except Exception:
+        pass  # Don't fail the request if metadata save fails
+
+    # Cache the result in Redis
+    try:
+        redis_client = get_redis_client()
+        cache_key = f"knowledge:last_attachments:{persona_id}"
+        redis_client.lpush(cache_key, json.dumps({"title": title, "source": source, "chunks": total, "timestamp": now_iso()}))
+        redis_client.ltrim(cache_key, 0, 9)  # Keep last 10 items
+        redis_client.expire(cache_key, 86400)  # 24h TTL
+    except Exception:
+        pass  # Don't fail if Redis is unavailable
+
+    return {"inserted_points": total, "collection": QDRANT_COLLECTION, "point_ids": point_ids}
 
 
 async def search_knowledge(persona_id: str, query_text: str, top_k: int = QDRANT_TOP_K) -> list[dict[str, Any]]:
@@ -862,6 +895,34 @@ async def knowledge_attach(payload: KnowledgeAttachRequest) -> dict[str, Any]:
         "qdrant": result,
         "timestamp": now_iso(),
     }
+
+
+@app.get("/api/knowledge/files")
+async def knowledge_files() -> dict[str, Any]:
+    """Get list of indexed knowledge files from PostgreSQL."""
+    try:
+        with get_db_cursor() as cur:
+            cur.execute("""
+                SELECT persona_id, title, source, tags, chunk_index, created_at
+                FROM mycrew_knowledge_items 
+                ORDER BY created_at DESC
+                LIMIT 100
+            """)
+            rows = cur.fetchall()
+        
+        files = []
+        for row in rows:
+            files.append({
+                "persona_id": row["persona_id"],
+                "title": row["title"] or row["source"] or "Sem título",
+                "source": row["source"],
+                "tags": row["tags"] if isinstance(row["tags"], list) else [],
+                "chunks": 1,  # Each row is one chunk
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            })
+        return {"files": files, "total": len(files)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar arquivos: {exc}")
 
 
 @app.get("/api/knowledge/search", response_model=KnowledgeSearchResponse)
@@ -1270,9 +1331,13 @@ async def ssh_terminal(websocket: WebSocket):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize IoT table on startup."""
+    """Initialize tables on startup."""
     try:
         init_iot_table()
+    except Exception:
+        pass  # Table might already exist or DB not ready yet
+    try:
+        init_knowledge_tables()
     except Exception:
         pass  # Table might already exist or DB not ready yet
 

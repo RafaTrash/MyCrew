@@ -2,6 +2,7 @@ import os
 from contextlib import contextmanager
 
 import psycopg2
+import redis
 from psycopg2.extras import RealDictCursor
 
 from .config import env
@@ -36,6 +37,16 @@ def get_db_cursor(commit: bool = False):
         conn.close()
 
 
+def get_redis_client():
+    """Get Redis client for caching."""
+    return redis.Redis(
+        host=env("REDIS_HOST", "redis"),
+        port=int(env("REDIS_PORT", "6379") or "6379"),
+        db=int(env("REDIS_DB", "0") or "0"),
+        decode_responses=True,
+    )
+
+
 def init_iot_table():
     """Initialize the IoT devices table if it doesn't exist."""
     with get_db_cursor(commit=True) as cur:
@@ -61,4 +72,29 @@ def init_iot_table():
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_mycrew_iotdevices_name ON mycrew_iotdevices(name);
             CREATE INDEX IF NOT EXISTS idx_mycrew_iotdevices_ip ON mycrew_iotdevices(ip_address);
+        """)
+
+
+def init_knowledge_tables():
+    """Initialize knowledge-related tables in PostgreSQL."""
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mycrew_knowledge_items (
+                id SERIAL PRIMARY KEY,
+                persona_id VARCHAR(255) NOT NULL,
+                qdrant_point_id UUID,
+                title VARCHAR(500),
+                source VARCHAR(255),
+                tags JSONB,
+                chunk_index INTEGER DEFAULT 0,
+                content_preview TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_mycrew_knowledge_persona ON mycrew_knowledge_items(persona_id);
+            CREATE INDEX IF NOT EXISTS idx_mycrew_knowledge_source ON mycrew_knowledge_items(source);
+            CREATE INDEX IF NOT EXISTS idx_mycrew_knowledge_created ON mycrew_knowledge_items(created_at DESC);
         """)
