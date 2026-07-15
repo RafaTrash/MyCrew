@@ -1,0 +1,111 @@
+/* ===== SCREEN: CONHECIMENTO ===== */
+.knowledge-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.knowledge-main { display: grid; gap: 16px; min-width: 0; }
+
+.knowledge-agent-selector { margin-bottom: 16px; }
+.agent-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Chip de agente (unificado em .selectable-row) */
+.knowledge-agent-chip .avatar { width: 36px; height: 36px; border-radius: 10px; font-size: 14px; }
+.knowledge-agent-chip .chip-info { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.knowledge-agent-chip .chip-name { font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.knowledge-agent-chip .chip-role { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.knowledge-agent-chip .chip-model { font-size: 10px; color: var(--violet-2); font-family: "JetBrains Mono", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.knowledge-agent-chip .chip-badges { display: flex; flex-direction: column; gap: 4px; flex: none; align-self: flex-start; }
+.knowledge-agent-chip .chip-badges .src-badge { font-size: 9px; padding: 2px 6px; border-radius: 5px; }
+
+/* Forms compartilhados */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.form-grid input,
+.knowledge-content {
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 11px;
+  font: inherit;
+  background: var(--bg-2);
+  color: var(--ink);
+  outline: none;
+}
+.form-grid input:focus,
+.knowledge-content:focus { border-color: rgba(124, 92, 255, 0.5); }
+.knowledge-content { margin-top: 10px; min-height: 200px; width: 100%; resize: vertical; }
+.field { display: grid; gap: 6px; }
+.field-label { font-size: 12px; color: var(--muted); }
+.form-grid select,
+#knowledge-agent {
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 11px;
+  font: inherit;
+  background: var(--bg-2);
+  color: var(--ink);
+  outline: none;
+}
+#knowledge-agent:focus { border-color: rgba(124, 92, 255, 0.5); }
+
+/* File drop */
+.file-drop {
+  margin-top: 10px;
+  border: 1.5px dashed var(--panel-line);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg-2);
+  transition: border-color 0.15s ease, background 0.15s ease;
+  text-align: center;
+}
+.file-drop.dragover { border-color: var(--violet); background: rgba(124, 92, 255, 0.08); }
+.file-drop .fd-inner { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.file-drop .fd-icon { font-size: 18px; color: var(--violet-2); }
+.file-drop p { margin: 0; color: var(--ink); font-size: 13px; }
+.file-drop .fd-hint { font-size: 11px; color: var(--faint); display: block; width: 100%; text-align: center; margin-top: 2px; }
+.file-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center; }
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 8px;
+  background: var(--chip);
+  border: 1px solid var(--panel-line);
+  font-family: "JetBrains Mono", monospace;
+}
+.file-chip button {
+  border: none;
+  background: rgba(255, 107, 129, 0.15);
+  color: var(--red);
+  border-radius: 6px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+}
+.result-box {
+  margin-top: 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 56px;
+  background: var(--bg-2);
+  white-space: pre-wrap;
+  font-size: 13px;
+  color: var(--muted);
+}

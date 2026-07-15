@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -190,6 +191,35 @@ class ChatWebSocketHandler:
     def __init__(self):
         self._connections: dict[str, WebSocket] = {}
 
+    def _build_stage_event(
+        self,
+        stage: str,
+        status: str,
+        label: str,
+        metadata: dict[str, Any] | None = None,
+        source: str = "",
+        input_preview: str = "",
+        output_preview: str = "",
+        started_at: str = "",
+        finished_at: str = "",
+        stop_reason: str = "",
+    ) -> dict[str, Any]:
+        """Constrói um evento de stage enriquecido para o frontend."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {
+            "type": "stage",
+            "stage": stage,
+            "status": status,
+            "label": label,
+            "source": source,
+            "started_at": started_at or now_iso,
+            "finished_at": finished_at or now_iso,
+            "input_preview": input_preview[:500],
+            "output_preview": output_preview[:500],
+            "stop_reason": stop_reason,
+            "metadata": metadata or {},
+        }
+
     async def handle(self, websocket: WebSocket) -> None:
         """Handler principal da conexão WebSocket."""
         await websocket.accept()
@@ -250,21 +280,27 @@ class ChatWebSocketHandler:
 
             # ===== ETAPA 1: Consulta memória =====
             telemetry.start_stage("memory")
-            # Verifica se há memórias anteriores no cache
+            stage_start = datetime.now(timezone.utc).isoformat()
             cached_memory = await _check_redis_cache(persona_id)
-            await asyncio.sleep(0.05)  # Mínimo delay para feedback visual
+            await asyncio.sleep(0.05)
             telemetry.finish_stage("memory", memory_found=bool(cached_memory))
+            stage_end = datetime.now(timezone.utc).isoformat()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "memory",
-                "status": "done",
-                "label": "🧠 Consulta memória",
-                "metadata": {"memory_found": bool(cached_memory)},
-            }))
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="memory",
+                status="done",
+                label="🧠 Consulta memória",
+                source="redis",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"persona_id={persona_id}",
+                output_preview=f"memória {'encontrada' if cached_memory else 'não encontrada'}",
+                metadata={"memory_found": bool(cached_memory)},
+            )))
 
             # ===== ETAPA 2: Busca vetorial (Qdrant) =====
             telemetry.start_stage("vector_search")
+            stage_start = datetime.now(timezone.utc).isoformat()
             qdrant_items = await _search_knowledge(
                 persona_id.lower(), message, top_k=QDRANT_TOP_K
             )
@@ -274,38 +310,59 @@ class ChatWebSocketHandler:
                 top_k=QDRANT_TOP_K,
             )
             telemetry.documents_found = len(qdrant_items)
+            stage_end = datetime.now(timezone.utc).isoformat()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "vector_search",
-                "status": "done",
-                "label": "🔍 Busca vetorial (Qdrant)",
-                "metadata": {
+            # Gera preview dos scores
+            scores_str = ", ".join(
+                f"{item.get('score', 0):.3f}" for item in qdrant_items[:3]
+            ) if qdrant_items else "—"
+
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="vector_search",
+                status="done",
+                label="🔍 Busca vetorial (Qdrant)",
+                source="qdrant",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"query={message[:100]} | top_k={QDRANT_TOP_K}",
+                output_preview=f"{len(qdrant_items)} documento(s) | scores: {scores_str}",
+                metadata={
                     "documents_found": len(qdrant_items),
                     "top_k": QDRANT_TOP_K,
+                    "avg_score": round(
+                        sum(item.get("score", 0) for item in qdrant_items) / max(len(qdrant_items), 1), 4
+                    ),
+                    "scores": [item.get("score", 0) for item in qdrant_items],
+                    "titles": [item["title"] for item in qdrant_items],
                 },
-            }))
+            )))
 
             # ===== ETAPA 3: Cache Redis =====
             telemetry.start_stage("redis_cache")
+            stage_start = datetime.now(timezone.utc).isoformat()
             redis_cache = await _check_redis_cache(persona_id)
             telemetry.redis_cache_hit = bool(redis_cache)
             telemetry.finish_stage("redis_cache", hit=bool(redis_cache))
+            stage_end = datetime.now(timezone.utc).isoformat()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "redis_cache",
-                "status": "done",
-                "label": "⚡ Cache Redis",
-                "metadata": {"hit": bool(redis_cache)},
-            }))
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="redis_cache",
+                status="done",
+                label="⚡ Cache Redis",
+                source="redis",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"key=knowledge:last_attachments:{persona_id}",
+                output_preview="HIT" if redis_cache else "MISS",
+                metadata={"hit": bool(redis_cache)},
+            )))
 
             # ===== ETAPA 4: Construção do Prompt =====
             telemetry.start_stage("prompt_build")
+            stage_start = datetime.now(timezone.utc).isoformat()
 
             messages: list[dict[str, str]] = []
 
-            # Adiciona contexto do Qdrant
             if qdrant_items:
                 qdrant_context = "\n\n".join(
                     f"### {item['title']} (origem: {item['source']})\n{item['content']}"
@@ -316,60 +373,66 @@ class ChatWebSocketHandler:
                     "content": f"Conhecimento recuperado:\n{qdrant_context}",
                 })
 
-            # Adiciona histórico da sessão
             for msg_item in session.messages[-12:]:
                 role = msg_item["role"].strip().lower()
                 if role in ("user", "assistant") and msg_item["content"].strip():
                     messages.append({"role": role, "content": msg_item["content"].strip()})
 
-            # Adiciona mensagem atual
             messages.append({"role": "user", "content": message})
 
-            # Calcula contexto
             context_chars = sum(len(m.get("content", "")) for m in messages)
             telemetry.context_chars = context_chars
-            telemetry.tokens_sent = context_chars // 4  # Aproximação
+            telemetry.tokens_sent = context_chars // 4
 
             telemetry.finish_stage("prompt_build", context_chars=context_chars)
+            stage_end = datetime.now(timezone.utc).isoformat()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "prompt_build",
-                "status": "done",
-                "label": "📝 Construção do Prompt",
-                "metadata": {
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="prompt_build",
+                status="done",
+                label="📝 Construção do Prompt",
+                source="app",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"{len(messages)} mensagens | {context_chars} chars",
+                output_preview=f"~{context_chars // 4} tokens estimados",
+                metadata={
                     "context_chars": context_chars,
                     "messages_count": len(messages),
                     "estimated_tokens": context_chars // 4,
+                    "has_qdrant_context": bool(qdrant_items),
+                    "history_messages": len(session.messages),
                 },
-            }))
+            )))
 
             # ===== ETAPA 5: Chamada ao Modelo =====
             telemetry.start_stage("llm_call")
+            stage_start = datetime.now(timezone.utc).isoformat()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "llm_call",
-                "status": "running",
-                "label": "🤖 Chamada ao Modelo",
-                "metadata": {"model": model, "temperature": temperature},
-            }))
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="llm_call",
+                status="running",
+                label="🤖 Chamada ao Modelo",
+                source="open-webui",
+                started_at=stage_start,
+                input_preview=f"model={model} | temp={temperature} | {len(messages)} msgs",
+                metadata={"model": model, "temperature": temperature},
+            )))
 
-            # Streaming da resposta com medição de latência
             llm_start = time.monotonic()
             full_text, usage = await _stream_llm_response(model, messages, websocket)
             llm_end = time.monotonic()
             telemetry.llm_latency_ms = (llm_end - llm_start) * 1000
 
             telemetry.finish_stage("llm_call", model=model, temperature=temperature)
+            stage_end = datetime.now(timezone.utc).isoformat()
 
-            # Atualiza métricas
             prompt_tokens = int(usage.get("prompt_tokens", 0))
             completion_tokens = int(usage.get("completion_tokens", 0))
             telemetry.tokens_received = completion_tokens or len(full_text.split())
             telemetry.tokens_sent = prompt_tokens or telemetry.tokens_sent
 
-            # Infere provider do modelo
+            # Infere provider
             provider = "ollama"
             model_lower = model.lower()
             if "gpt" in model_lower or "openai" in model_lower:
@@ -389,27 +452,67 @@ class ChatWebSocketHandler:
             telemetry.records_returned = len(qdrant_items)
             telemetry.memory_used = bool(cached_memory)
 
+            # Determina stop_reason
+            stop_reason = "stop"
+            finish_reason = usage.get("finish_reason", "")
+            if finish_reason:
+                stop_reason = finish_reason
+            elif not full_text:
+                stop_reason = "empty"
+
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="llm_call",
+                status="done",
+                label="🤖 Chamada ao Modelo",
+                source="open-webui",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"model={model} | temp={temperature} | {len(messages)} msgs",
+                output_preview=f"{len(full_text)} chars | {completion_tokens} tokens gerados",
+                stop_reason=stop_reason,
+                metadata={
+                    "model": model,
+                    "temperature": temperature,
+                    "provider": provider,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                    "llm_latency_ms": round(telemetry.llm_latency_ms, 2),
+                    "stop_reason": stop_reason,
+                    "generation_speed": round(
+                        completion_tokens / max(telemetry.llm_latency_ms / 1000, 0.001), 1
+                    ) if completion_tokens and telemetry.llm_latency_ms > 0 else 0,
+                },
+            )))
+
             # ===== ETAPA 6: Resposta concluída =====
             telemetry.start_stage("response")
+            stage_start = datetime.now(timezone.utc).isoformat()
 
-            # Salva mensagens na sessão
             session.add_message("user", message)
             if full_text:
                 session.add_message("assistant", full_text)
 
-            # Atualiza métricas da sessão
             session.metrics = telemetry.to_dict()
 
             telemetry.finish_stage("response")
-
+            stage_end = datetime.now(timezone.utc).isoformat()
             telemetry.finish()
 
-            await websocket.send_text(json.dumps({
-                "type": "stage",
-                "stage": "response",
-                "status": "done",
-                "label": "💬 Resposta concluída",
-            }))
+            await websocket.send_text(json.dumps(self._build_stage_event(
+                stage="response",
+                status="done",
+                label="💬 Resposta concluída",
+                source="app",
+                started_at=stage_start,
+                finished_at=stage_end,
+                input_preview=f"resposta de {len(full_text)} chars",
+                output_preview=full_text[:200],
+                metadata={
+                    "response_length": len(full_text),
+                    "total_duration_ms": round(telemetry.total_duration_ms, 2),
+                },
+            )))
 
             # Envia métricas finais
             await websocket.send_text(json.dumps({

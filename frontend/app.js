@@ -78,7 +78,6 @@ const knowledgeFileList = document.getElementById("knowledge-file-list");
 const stackHealth = document.getElementById("stack-health");
 const stackDot = document.getElementById("stack-dot");
 const stackSub = document.getElementById("stack-sub");
-const agentSearch = document.getElementById("agent-search");
 const linkQdrantDashboard = document.getElementById("link-qdrant-dashboard");
 const linkPortainer = document.getElementById("link-portainer");
 const linkDozzle = document.getElementById("link-dozzle");
@@ -186,7 +185,7 @@ function avatarInner(persona) {
 }
 
 function avatarHtml(persona, extraClass = "") {
-  const cls = `agent-avatar ${extraClass}`.trim();
+  const cls = `avatar ${extraClass}`.trim();
   return `<div class='${cls}'>${avatarInner(persona)}</div>`;
 }
 
@@ -235,7 +234,7 @@ function renderStack(data) {
           <a class='si-addr' href='${esc(s.address)}' target='_blank' rel='noreferrer'>${esc(s.address)}</a>
           ${s.key === "qdrant" && ep.qdrant_dashboard ? `<a class='si-addr si-dash' href='${esc(ep.qdrant_dashboard)}' target='_blank' rel='noreferrer'>Dashboard ↗</a>` : ""}
         </div>
-        <span class='badge ${s.online ? "on" : "off"}'>${s.online ? "ONLINE" : "OFFLINE"}</span>
+        <span class='status-badge ${s.online ? "is-on" : "is-off"}'>${s.online ? "ONLINE" : "OFFLINE"}</span>
       </div>`).join("")
     : "<div class='model-empty'>Sem serviços.</div>";
 }
@@ -289,7 +288,7 @@ function renderModels(modelsData) {
           <div class='provider-header'>
             <span class='provider-icon'>${getProviderIcon(provider)}</span>
             <span class='provider-name'>${esc(info.label)}</span>
-            <span class='badge ${provider === "ollama" ? "local" : "api"}-badge'>${originBadge}</span>
+            <span class='status-badge ${provider === "ollama" ? "is-local" : "is-api"}'>${originBadge}</span>
             <span class='provider-count'>${providerModels.length}</span>
           </div>
           <div class='provider-models'>
@@ -339,10 +338,10 @@ function renderEndpoints(data) {
 
 function agentCardHtml(persona, index) {
   const st = agentStatus(persona);
-  return `<div class='agent-card' data-index='${index}'>
-    <div class='agent-top'>
+  return `<div class='entity-card agent-card' data-index='${index}'>
+    <div class='entity-head agent-top'>
       ${avatarHtml(persona)}
-      <div class='agent-id'>
+      <div class='entity-info agent-id'>
         <strong>${esc(persona.nome)}</strong>
         <span>${esc(persona.papel || "Agente")}</span>
       </div>
@@ -361,7 +360,7 @@ function agentCardHtml(persona, index) {
 function railRowHtml(persona, index) {
   const st = agentStatus(persona);
   const selected = state.selectedPersona?.id === persona.id ? "selected" : "";
-  return `<button class='rail-row ${selected}' data-open='${index}'>
+  return `<button class='selectable-row rail-row ${selected}' data-open='${index}'>
     ${avatarHtml(persona, "sm")}
     <div class='rail-info'>
       <div class='rail-top'>
@@ -485,7 +484,7 @@ function renderAgentsSidebar() {
           ? formatTimeAgo(state.historyByPersona[p.id][state.historyByPersona[p.id].length - 1].timestamp)
           : "";
         return `<div class='agent-sidebar-card ${selected}' data-open='${i}'>
-          <div class='agent-sidebar-top'>
+          <div class='entity-head agent-sidebar-top'>
             ${avatarHtml(p)}
             <div class='agent-sidebar-info'>
               <div class='agent-sidebar-name'>${esc(p.nome)}</div>
@@ -557,13 +556,13 @@ function renderSessionsList() {
   
   sessionsList.innerHTML = sessions.map((session) => {
     const isActive = session.session_id === state.currentSessionId;
-    const statusCls = session.status === "active" ? "active" : "finalized";
+    const statusCls = session.status === "active" ? "is-active" : "is-finalized";
     const shortId = session.session_id ? session.session_id.slice(0, 8) : "";
     
-    return `<div class='session-item ${isActive ? "active" : ""}' data-session-id='${session.session_id}'>
+    return `<div class='selectable-row session-item ${isActive ? "is-selected" : ""}' data-session-id='${session.session_id}'>
       <div class='session-header'>
         <span class='session-id'>#${esc(shortId)}</span>
-        <span class='session-status-badge ${statusCls}'>${session.status === "active" ? "Ativa" : "Finalizada"}</span>
+        <span class='status-badge session-status-badge ${statusCls}'>${session.status === "active" ? "Ativa" : "Finalizada"}</span>
       </div>
       <div class='session-preview'>${esc(getSessionPreview(session))}</div>
       <div class='session-time'>${formatSessionTimeAgo(session.started_at)}</div>
@@ -782,7 +781,7 @@ function resetAgentPipeline() {
 // Knowledge Agent Chip Functions
 function knowledgeAgentChipHtml(persona, index) {
   const selected = knowledgeSelectedPersonaId === persona.id ? "selected" : "";
-  return `<button class='knowledge-agent-chip ${selected}' data-kagent='${index}' title='${esc(persona.nome)} · ${esc(persona.papel || "Agente")}'>
+  return `<button class='selectable-row knowledge-agent-chip ${selected}' data-kagent='${index}' title='${esc(persona.nome)} · ${esc(persona.papel || "Agente")}'>
     ${avatarHtml(persona, "sm")}
     <div class='chip-info'>
       <span class='chip-name'>${esc(persona.nome)}</span>
@@ -940,10 +939,23 @@ function getOrCreateSession(sessionId) {
   return state.timelineSessions[sessionId];
 }
 
-function addTimelineEvent(stage, label, status, durationMs, metadata) {
+function addTimelineEvent(stage, label, status, durationMs, metadata, rawMsg) {
   const session = getOrCreateSession(state.currentSessionId || "pending");
   
-  const event = { stage, label, status, durationMs, metadata };
+  // Extrai campos enriquecidos do rawMsg, se disponível
+  const event = {
+    stage,
+    label,
+    status,
+    durationMs,
+    metadata: metadata || {},
+    source: rawMsg?.source || '',
+    started_at: rawMsg?.started_at || '',
+    finished_at: rawMsg?.finished_at || '',
+    input_preview: rawMsg?.input_preview || '',
+    output_preview: rawMsg?.output_preview || '',
+    stop_reason: rawMsg?.stop_reason || '',
+  };
   session.stages.push(event);
   
   if (durationMs) {
@@ -952,6 +964,220 @@ function addTimelineEvent(stage, label, status, durationMs, metadata) {
   
   renderNewPipeline(session);
   renderTelemetryForStage(stage, event);
+}
+
+function buildStageBadges(stage, metadata) {
+  if (!metadata) return '';
+  const badges = [];
+  
+  // Cache HIT/MISS
+  if (metadata.hit !== undefined) {
+    badges.push(`<span class='step-badge-item ${metadata.hit ? 'badge-hit' : 'badge-miss'}'>⚡ ${metadata.hit ? 'HIT' : 'MISS'}</span>`);
+  }
+  if (metadata.memory_found !== undefined) {
+    badges.push(`<span class='step-badge-item ${metadata.memory_found ? 'badge-hit' : 'badge-miss'}'>🧠 ${metadata.memory_found ? 'Encontrada' : 'Sem memória'}</span>`);
+  }
+  
+  // Top K
+  if (metadata.top_k) {
+    badges.push(`<span class='step-badge-item badge-primary'>Top ${metadata.top_k}</span>`);
+  }
+  
+  // Documentos
+  if (metadata.documents_found !== undefined) {
+    badges.push(`<span class='step-badge-item badge-success'>📄 ${metadata.documents_found} docs</span>`);
+  }
+  
+  // Tokens
+  if (metadata.estimated_tokens) {
+    badges.push(`<span class='step-badge-item badge-warning'>🔤 ~${metadata.estimated_tokens.toLocaleString()} tk</span>`);
+  }
+  if (metadata.prompt_tokens) {
+    badges.push(`<span class='step-badge-item badge-primary'>📤 ${metadata.prompt_tokens.toLocaleString()} tk</span>`);
+  }
+  if (metadata.completion_tokens) {
+    badges.push(`<span class='step-badge-item badge-success'>📥 ${metadata.completion_tokens.toLocaleString()} tk</span>`);
+  }
+  
+  // Tempo
+  if (metadata.llm_latency_ms) {
+    badges.push(`<span class='step-badge-item badge-warning'>⏱ ${metadata.llm_latency_ms.toFixed(0)}ms</span>`);
+  }
+  
+  // Score médio
+  if (metadata.avg_score !== undefined) {
+    badges.push(`<span class='step-badge-item badge-primary'>⭐ ${metadata.avg_score.toFixed(3)}</span>`);
+  }
+  
+  // Velocidade de geração
+  if (metadata.generation_speed) {
+    badges.push(`<span class='step-badge-item badge-success'>🚀 ${metadata.generation_speed} tk/s</span>`);
+  }
+  
+  // Stop reason
+  if (metadata.stop_reason) {
+    badges.push(`<span class='step-badge-item badge-warning'>⏹ ${metadata.stop_reason}</span>`);
+  }
+  
+  if (badges.length === 0) return '';
+  return `<div class='step-footer-badges'>${badges.join('')}</div>`;
+}
+
+function buildStageTooltip(stage, s) {
+  const metadata = s.metadata || {};
+  const desc = getStageDescription(stage);
+  const source = s.source || '';
+  const startedAt = s.started_at ? new Date(s.started_at).toLocaleTimeString('pt-BR') : '—';
+  const finishedAt = s.finished_at ? new Date(s.finished_at).toLocaleTimeString('pt-BR') : '—';
+  const duration = s.durationMs ? `${s.durationMs.toFixed(0)}ms` : '—';
+  const stopReason = s.stop_reason || '';
+  
+  // Métricas específicas da etapa
+  let metricsHtml = '';
+  if (metadata && Object.keys(metadata).length > 0) {
+    const metricEntries = Object.entries(metadata).filter(([k]) => 
+      !['scores', 'titles'].includes(k) // Exclui arrays grandes
+    );
+    if (metricEntries.length > 0) {
+      metricsHtml = `
+        <div class='tt-section'>
+          <div class='tt-section-title'>📊 Métricas</div>
+          <div class='tt-metrics-grid'>
+            ${metricEntries.map(([key, value]) => {
+              const label = key.replace(/_/g, ' ');
+              const displayValue = typeof value === 'number' ? value.toLocaleString() : String(value);
+              return `<div class='tt-metric'><span class='tt-metric-label'>${esc(label)}</span><span class='tt-metric-value'>${esc(displayValue)}</span></div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+  }
+  
+  // Scores detalhados (se existirem)
+  let scoresHtml = '';
+  if (metadata.scores && metadata.scores.length > 0) {
+    const scoresList = metadata.scores.map((sc, i) => {
+      const title = metadata.titles?.[i] || `Doc ${i+1}`;
+      return `<div class='tt-row'><span class='tt-row-label'>${esc(title)}</span><span class='tt-row-value'>${Number(sc).toFixed(4)}</span></div>`;
+    }).join('');
+    scoresHtml = `
+      <div class='tt-section'>
+        <div class='tt-section-title'>📄 Documentos recuperados</div>
+        ${scoresList}
+      </div>`;
+  }
+  
+  return `
+    <div class='pipeline-tooltip' data-stage='${stage}'>
+      <div class='tt-header'>
+        <span class='tt-title'>${esc(s.label)}</span>
+        <span class='tt-status status-${s.status}'>${getStatusLabel(s.status)}</span>
+      </div>
+      <div class='tt-section'>
+        <div class='tt-desc'>${esc(desc)}</div>
+      </div>
+      <div class='tt-section'>
+        <div class='tt-section-title'>⏱ Tempo</div>
+        <div class='tt-row'><span class='tt-row-label'>Início</span><span class='tt-row-value'>${startedAt}</span></div>
+        <div class='tt-row'><span class='tt-row-label'>Término</span><span class='tt-row-value'>${finishedAt}</span></div>
+        <div class='tt-row'><span class='tt-row-label'>Duração</span><span class='tt-row-value'>${duration}</span></div>
+      </div>
+      ${source ? `<div class='tt-section'><div class='tt-section-title'>🔌 Origem</div><div class='tt-row'><span class='tt-row-label'>Fonte</span><span class='tt-row-value'>${esc(source)}</span></div></div>` : ''}
+      ${stopReason ? `<div class='tt-section'><div class='tt-section-title'>⏹ Motivo de parada</div><div class='tt-row'><span class='tt-row-label'>Stop reason</span><span class='tt-row-value'>${esc(stopReason)}</span></div></div>` : ''}
+      ${metricsHtml}
+      ${scoresHtml}
+    </div>`;
+}
+
+function openStageDrawer(stageData) {
+  const drawer = document.getElementById('stage-drawer');
+  if (!drawer) return;
+  
+  const s = stageData;
+  const metadata = s.metadata || {};
+  
+  // Atualiza header
+  document.getElementById('drawer-icon').textContent = getStageIcon(s.stage, s.status);
+  document.getElementById('drawer-title').textContent = s.label || 'Detalhes da Etapa';
+  document.getElementById('drawer-subtitle').textContent = `Etapa: ${s.stage} · ${getStatusLabel(s.status)}`;
+  
+  // Payload de entrada
+  const inputPreview = s.input_preview || 'Nenhum dado de entrada disponível.';
+  document.getElementById('drawer-input-content').textContent = inputPreview;
+  
+  // Payload de saída
+  const outputPreview = s.output_preview || 'Nenhum dado de saída disponível.';
+  document.getElementById('drawer-output-content').textContent = outputPreview;
+  
+  // Logs
+  const logsContainer = document.getElementById('drawer-logs-content');
+  const logs = [];
+  if (s.started_at) {
+    logs.push(`<div class='drawer-log-line log-info'>⏱️ [${new Date(s.started_at).toLocaleTimeString('pt-BR')}] Etapa "${s.stage}" iniciada</div>`);
+  }
+  if (s.status === 'running') {
+    logs.push(`<div class='drawer-log-line log-info'>🔄 Etapa em execução...</div>`);
+  } else if (s.status === 'done') {
+    logs.push(`<div class='drawer-log-line log-success'>✅ [${new Date(s.finished_at || Date.now()).toLocaleTimeString('pt-BR')}] Etapa concluída com sucesso (${s.durationMs ? s.durationMs.toFixed(0) + 'ms' : '—'})</div>`);
+  } else if (s.status === 'error') {
+    logs.push(`<div class='drawer-log-line log-error'>❌ Etapa falhou: ${s.metadata?.error || 'Erro desconhecido'}</div>`);
+  }
+  if (s.source) {
+    logs.push(`<div class='drawer-log-line log-metric'>🔌 Origem dos dados: ${s.source}</div>`);
+  }
+  if (s.stop_reason) {
+    logs.push(`<div class='drawer-log-line log-warn'>⏹ Stop reason: ${s.stop_reason}</div>`);
+  }
+  logsContainer.innerHTML = logs.length > 0 ? logs.join('') : '<div class="drawer-log-line log-info">Nenhum log disponível.</div>';
+  
+  // Telemetria
+  const telemetryContainer = document.getElementById('drawer-telemetry-content');
+  const telemetryItems = [
+    { label: 'Duração', value: s.durationMs ? `${s.durationMs.toFixed(0)}ms` : '—' },
+    { label: 'Status', value: getStatusLabel(s.status) },
+    { label: 'Fonte', value: s.source || '—' },
+    { label: 'Stop Reason', value: s.stop_reason || '—' },
+  ];
+  telemetryContainer.innerHTML = telemetryItems.map(item => 
+    `<div class='drawer-metric-item'><span class='drawer-metric-label'>${esc(item.label)}</span><span class='drawer-metric-value'>${esc(item.value)}</span></div>`
+  ).join('');
+  
+  // Métricas completas
+  const metricsContainer = document.getElementById('drawer-metrics-content');
+  const metricItems = [
+    { label: 'Tokens Enviados', value: metadata.prompt_tokens?.toLocaleString() || metadata.estimated_tokens?.toLocaleString() || '—' },
+    { label: 'Tokens Recebidos', value: metadata.completion_tokens?.toLocaleString() || '—' },
+    { label: 'Documentos', value: metadata.documents_found?.toLocaleString() || '—' },
+    { label: 'Cache', value: metadata.hit !== undefined ? (metadata.hit ? '✅ HIT' : '❌ MISS') : metadata.memory_found !== undefined ? (metadata.memory_found ? '✅ Encontrada' : '❌ Não encontrada') : '—' },
+    { label: 'Modelo', value: metadata.model || '—' },
+    { label: 'Provedor', value: metadata.provider || '—' },
+    { label: 'Latência LLM', value: metadata.llm_latency_ms ? `${metadata.llm_latency_ms.toFixed(0)}ms` : '—' },
+    { label: 'Temperatura', value: metadata.temperature !== undefined ? String(metadata.temperature) : '—' },
+    { label: 'Score Médio', value: metadata.avg_score !== undefined ? metadata.avg_score.toFixed(4) : '—' },
+    { label: 'Velocidade', value: metadata.generation_speed ? `${metadata.generation_speed} tk/s` : '—' },
+    { label: 'Top K', value: metadata.top_k || '—' },
+    { label: 'Total Tokens', value: metadata.total_tokens?.toLocaleString() || '—' },
+  ];
+  metricsContainer.innerHTML = metricItems.map(item => 
+    `<div class='drawer-metric-item'><span class='drawer-metric-label'>${esc(item.label)}</span><span class='drawer-metric-value'>${esc(item.value)}</span></div>`
+  ).join('');
+  
+  // JSON Bruto
+  document.getElementById('drawer-raw-content').textContent = JSON.stringify(s, null, 2);
+  
+  // Mostra drawer
+  drawer.style.display = '';
+  
+  // Reseta abas para a primeira
+  document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.drawer-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('.drawer-tab[data-tab="input"]')?.classList.add('active');
+  document.getElementById('drawer-tab-input')?.classList.add('active');
+}
+
+function closeStageDrawer() {
+  const drawer = document.getElementById('stage-drawer');
+  if (drawer) drawer.style.display = 'none';
 }
 
 function renderNewPipeline(session) {
@@ -970,24 +1196,14 @@ function renderNewPipeline(session) {
   
   const stagesHtml = session.stages.map((s, idx) => {
     const statusClass = s.status === 'done' ? 'step-done' : s.status === 'error' ? 'step-error' : s.status === 'running' ? 'step-running' : 'step-waiting';
-    
-    // Render telemetria inline se existir
-    const telemetryHtml = s.metadata && Object.keys(s.metadata).length > 0 ? `
-      <div class='step-telemetry'>
-        <div class='step-telemetry-header'>📊 Telemetria</div>
-        ${Object.entries(s.metadata).map(([key, value]) => {
-          const label = key.replace(/_/g, ' ');
-          const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
-          return `<div class='step-telemetry-item'><span class='step-telemetry-label'>${esc(label)}</span><span class='step-telemetry-value'>${esc(displayValue)}</span></div>`;
-        }).join('')}
-      </div>
-    ` : '';
-    
-    // Resumo da etapa
     const summary = getStageSummary(s.stage, s.metadata);
+    const badgesHtml = buildStageBadges(s.stage, s.metadata);
+    const miniStatsHtml = buildMiniStats(s.stage, s.metadata, s.durationMs);
+    const tooltipHtml = buildStageTooltip(s.stage, s);
     
     return `
-      <div class='pipeline-card ${statusClass}' data-stage='${s.stage}'>
+      <div class='pipeline-card ${statusClass}' data-stage='${s.stage}' data-stage-idx='${idx}'>
+        ${tooltipHtml}
         <div class='step-header'>
           <div class='step-header-left'>
             <span class='step-icon'>${getStageIcon(s.stage, s.status)}</span>
@@ -996,13 +1212,14 @@ function renderNewPipeline(session) {
               ${summary ? `<div class='step-summary'>${esc(summary)}</div>` : ''}
             </div>
           </div>
-          <span class='step-status status-${s.status}'>${getStatusLabel(s.status)}</span>
+          <span class='status-badge step-status is-${s.status}'>${getStatusLabel(s.status)}</span>
         </div>
         <div class='step-meta'>
           ${s.durationMs ? `<span class='step-duration'>⏱ ${s.durationMs.toFixed(0)}ms</span>` : ''}
           ${s.stage ? `<span class='step-badge'>${esc(s.stage)}</span>` : ''}
         </div>
-        ${telemetryHtml}
+        ${miniStatsHtml}
+        ${badgesHtml}
       </div>
       ${idx < session.stages.length - 1 ? `<div class='pipeline-connector connector-${s.status}'><span class='pipeline-connector-arrow'>${s.status === 'done' ? '✓' : s.status === 'running' ? '●' : '→'}</span></div>` : ''}
     `;
@@ -1033,6 +1250,111 @@ function renderNewPipeline(session) {
       </div>
     </div>
   `;
+  
+  // Bind tooltip events (hover com delay 300ms, position: fixed)
+  let tooltipTimer = null;
+  let visibleTooltip = null;
+  
+  pipelineContainer.querySelectorAll('.pipeline-card').forEach(card => {
+    const tooltip = card.querySelector('.pipeline-tooltip');
+    if (!tooltip) return;
+    
+    card.addEventListener('mouseenter', (e) => {
+      if (tooltipTimer) clearTimeout(tooltipTimer);
+      tooltipTimer = setTimeout(() => {
+        // Posiciona tooltip como fixed baseado na posição do card
+        const rect = card.getBoundingClientRect();
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        const tooltipWidth = 400; // estimativa
+        
+        // Calcula posição X centralizada
+        let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+        if (left < 10) left = 10;
+        if (left + tooltipWidth > windowWidth - 10) left = windowWidth - tooltipWidth - 10;
+        
+        // Calcula posição Y: abaixo se couber, senão acima
+        const tooltipHeight = 300; // estimativa
+        let top = rect.bottom + 12;
+        let positionTop = false;
+        
+        if (top + tooltipHeight > windowHeight - 10) {
+          top = rect.top - tooltipHeight - 12;
+          positionTop = true;
+          if (top < 10) top = 10;
+        }
+        
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        tooltip.classList.toggle('position-top', positionTop);
+        tooltip.classList.add('visible');
+        visibleTooltip = tooltip;
+      }, 300);
+    });
+    
+    card.addEventListener('mouseleave', () => {
+      if (tooltipTimer) {
+        clearTimeout(tooltipTimer);
+        tooltipTimer = null;
+      }
+      if (visibleTooltip) {
+        visibleTooltip.classList.remove('visible');
+        visibleTooltip = null;
+      }
+    });
+    
+    // Click para abrir drawer
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.pipeline-tooltip')) return;
+      
+      const idx = parseInt(card.getAttribute('data-stage-idx'), 10);
+      const stageData = session.stages[idx];
+      if (stageData) {
+        openStageDrawer(stageData);
+      }
+    });
+  });
+}
+
+function buildMiniStats(stage, metadata, durationMs) {
+  if (!metadata) return '';
+  
+  const stats = [];
+  
+  // Tokens
+  if (metadata.prompt_tokens) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>📤</span><span class='ms-value'>${(metadata.prompt_tokens / 1000).toFixed(1)}k</span></span>`);
+  } else if (metadata.estimated_tokens) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>🔤</span><span class='ms-value'>~${(metadata.estimated_tokens / 1000).toFixed(1)}k</span></span>`);
+  }
+  
+  if (metadata.completion_tokens) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>📥</span><span class='ms-value'>${(metadata.completion_tokens / 1000).toFixed(1)}k</span></span>`);
+  }
+  
+  // Documentos
+  if (metadata.documents_found !== undefined) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>📄</span><span class='ms-value'>${metadata.documents_found}</span></span>`);
+  }
+  
+  // Cache
+  if (metadata.hit !== undefined) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>⚡</span><span class='ms-value'>${metadata.hit ? 'HIT' : 'MISS'}</span></span>`);
+  }
+  
+  // Latência LLM
+  if (metadata.llm_latency_ms) {
+    const latSec = (metadata.llm_latency_ms / 1000).toFixed(1);
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>⏱</span><span class='ms-value'>${latSec}s</span></span>`);
+  }
+  
+  // Score
+  if (metadata.avg_score !== undefined) {
+    stats.push(`<span class='step-mini-stat'><span class='ms-icon'>⭐</span><span class='ms-value'>${metadata.avg_score.toFixed(3)}</span></span>`);
+  }
+  
+  if (stats.length === 0) return '';
+  return `<div class='step-mini-stats'>${stats.join('')}</div>`;
 }
 
 function getStageIcon(stage, status) {
@@ -1229,7 +1551,8 @@ function connectChatWebSocket(message) {
               msg.label,
               msg.status,
               msg.metadata?.duration_ms,
-              msg.metadata
+              msg.metadata,
+              msg
             );
             break;
 
@@ -1627,17 +1950,40 @@ function bindMenu() {
   });
 }
 
-function bindSearch() {
-  if (!agentSearch) return;
-  agentSearch.addEventListener("input", () => {
-    const q = agentSearch.value.trim().toLowerCase();
-    document.querySelectorAll("#personas-box .agent-card").forEach((card) => {
-      const idx = Number(card.getAttribute("data-index"));
-      const p = state.personas[idx];
-      const hit = !q || (p && `${p.nome} ${p.papel} ${p.source}`.toLowerCase().includes(q));
-      card.style.display = hit ? "" : "none";
-    });
-  });
+function toggleSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const appShell = document.querySelector('.app-shell');
+  if (sidebar && appShell) {
+    const isCollapsed = sidebar.classList.toggle('collapsed');
+    appShell.classList.toggle('sidebar-collapsed', isCollapsed);
+    const toggleBtn = document.getElementById('toggle-sidebar-btn');
+    if (toggleBtn) {
+      toggleBtn.textContent = isCollapsed ? '☰' : '✕';
+      toggleBtn.title = isCollapsed ? 'Expandir menu' : 'Recolher menu';
+    }
+    try {
+      localStorage.setItem('mycrew_sidebar_collapsed', isCollapsed ? 'true' : '');
+    } catch {}
+  }
+}
+
+function loadSidebarState() {
+  try {
+    const collapsed = localStorage.getItem('mycrew_sidebar_collapsed');
+    if (collapsed === 'true') {
+      const sidebar = document.querySelector('.sidebar');
+      const appShell = document.querySelector('.app-shell');
+      if (sidebar && appShell) {
+        sidebar.classList.add('collapsed');
+        appShell.classList.add('sidebar-collapsed');
+        const toggleBtn = document.getElementById('toggle-sidebar-btn');
+        if (toggleBtn) {
+          toggleBtn.textContent = '☰';
+          toggleBtn.title = 'Expandir menu';
+        }
+      }
+    }
+  } catch {}
 }
 
 function bindJumps() {
@@ -1836,10 +2182,10 @@ function renderIoTDevices(devices) {
       </div>
       ${device.description ? `<p class='muted' style='margin:0;font-size:12px'>${esc(device.description)}</p>` : ''}
       <div class='iot-device-actions'>
-        <button class='btn secondary device-check-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px'>⟳ Revalidar</button>
-        <button class='btn secondary device-connect-btn' data-id='${device.id}' data-host='${esc(device.ip_address)}' data-port='${device.port}' data-user='${esc(device.username || "root")}' data-auth='${esc(device.auth_method || "password")}' data-key='${esc(device.private_key || "")}' style='font-size:11px;padding:6px 10px'>⌨ SSH</button>
-        <button class='btn secondary device-edit-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px;background:linear-gradient(90deg, #f2b34b, #e0a035)'>✎</button>
-        <button class='btn secondary device-delete-btn' data-id='${device.id}' style='font-size:11px;padding:6px 10px;background:linear-gradient(90deg, #ff6b81, #ff3d57)'>✕</button>
+        <button class='btn secondary device-check-btn device-btn--sm' data-id='${device.id}'>⟳ Revalidar</button>
+        <button class='btn secondary device-connect-btn device-btn--sm' data-id='${device.id}' data-host='${esc(device.ip_address)}' data-port='${device.port}' data-user='${esc(device.username || "root")}' data-auth='${esc(device.auth_method || "password")}' data-key='${esc(device.private_key || "")}'>⌨ SSH</button>
+        <button class='btn secondary device-edit-btn device-btn--sm device-btn--edit' data-id='${device.id}'>✎</button>
+        <button class='btn secondary device-delete-btn device-btn--sm device-btn--danger' data-id='${device.id}'>✕</button>
       </div>
     </div>`).join("");
 
@@ -2068,7 +2414,7 @@ if (agentSearchSidebar) {
 }
 
 // Initialize
-document.getElementById("refresh-status")?.addEventListener("click", () => { loadStatus(); loadModels(); loadPersonas(); });
+document.getElementById("toggle-sidebar-btn")?.addEventListener("click", toggleSidebar);
 document.getElementById("send-chat")?.addEventListener("click", sendChat);
 document.getElementById("send-n8n-chat")?.addEventListener("click", sendChatViaFlow);
 document.getElementById("attach-knowledge")?.addEventListener("click", attachKnowledge);
@@ -2076,9 +2422,60 @@ document.getElementById("attach-knowledge-flow")?.addEventListener("click", send
 chatInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendChat(); } });
 
 bindMenu();
-bindSearch();
 bindJumps();
 bindKnowledge();
+loadSidebarState();
+
+// ===== Drawer Event Bindings =====
+(function() {
+  const drawer = document.getElementById('stage-drawer');
+  const closeBtn = document.getElementById('drawer-close');
+  const copyBtn = document.getElementById('drawer-copy-btn');
+  
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeStageDrawer);
+  }
+  
+  if (drawer) {
+    drawer.addEventListener('click', (e) => {
+      if (e.target === drawer) closeStageDrawer();
+    });
+  }
+  
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const rawContent = document.getElementById('drawer-raw-content');
+      if (rawContent && rawContent.textContent) {
+        navigator.clipboard.writeText(rawContent.textContent).then(() => {
+          copyBtn.textContent = '✅';
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.textContent = '📋';
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        }).catch(() => {});
+      }
+    });
+  }
+  
+  // Tab switching
+  document.querySelectorAll('.drawer-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.drawer-tab-content').forEach(t => t.classList.remove('active'));
+      
+      tab.classList.add('active');
+      const tabName = tab.getAttribute('data-tab');
+      const targetContent = document.getElementById(`drawer-tab-${tabName}`);
+      if (targetContent) targetContent.classList.add('active');
+    });
+  });
+  
+  // Keyboard: ESC to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeStageDrawer();
+  });
+})();
 
 /* ===== Plan/Act visual toggle (sem lógica funcional) ===== */
 (function () {

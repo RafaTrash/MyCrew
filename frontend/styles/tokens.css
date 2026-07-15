@@ -1,0 +1,54 @@
+/* ===== TOKENS =====
+   Apenas variáveis :root (cores, espaçamento, fontes) e reset global.
+   Não deve conter nenhum seletor de componente ou tela. */
+:root {
+  --bg: #0a0d18;
+  --bg-2: #101424;
+  --panel: #10142450;
+  --panel-solid: #10142a;
+  --panel-2: #171c33;
+  --panel-3: #1c2140;
+  --border: #262c46;
+  --border-soft: #1c2038;
+  --panel-line: #2a3856;
+  --text: #eceefa;
+  --text-dim: #8b91ab;
+  --text-dim-2: #5c6284;
+  --accent: #8b6bff;
+  --accent-2: #7c5cff;
+  --accent-soft: rgba(139,107,255,0.14);
+  --green: #35d399;
+  --green-soft: rgba(53,211,153,0.12);
+  --amber: #ffb454;
+  --amber-soft: rgba(255,180,84,0.12);
+  --red: #ff6b6b;
+  --red-soft: rgba(255,107,107,0.13);
+  --blue: #5ac8ff;
+  --violet-2: #9d7bff;
+  --muted: #8595b1;
+  --faint: #5b6a86;
+  --ink: #e7edf7;
+  --chip: #14203a;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Inter", system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse at top left, rgba(139,107,255,0.06), transparent 50%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* Custom scrollbar (global) */
+::-webkit-scrollbar{ width:6px; height:6px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{ background:rgba(139,107,255,0.35); border-radius:10px; }
+::-webkit-scrollbar-thumb:hover{ background:rgba(139,107,255,0.6); }
