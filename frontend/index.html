@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=12" />
+  <link rel="stylesheet" href="/styles/main.css?v=1" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" crossorigin="anonymous" />
 </head>
 <body>
@@ -40,28 +40,23 @@
       </div>
 
       <div class="sidebar-foot">
-        <div class="user-chip">
-          <span class="avatar-mono">R</span>
-          <div>
-            <strong>Rafael R.</strong>
-            <span>Administrador</span>
-          </div>
+      <div class="entity-head user-chip">
+        <span class="avatar-mono">R</span>
+        <div class="entity-info">
+          <strong>Rafael R.</strong>
+          <span>Administrador</span>
         </div>
+      </div>
       </div>
     </aside>
 
     <div class="main-shell">
       <header class="topbar">
         <div class="greeting">
-          <h2>Olá, Rafael <span class="wave">◆</span></h2>
-          <p>Painel de comando da sua equipe de agentes locais.</p>
+          <h2>MyCrew</h2>
         </div>
         <div class="topbar-actions">
-          <div class="search-box">
-            <span>⌕</span>
-            <input id="agent-search" placeholder="Buscar agentes, modelos, serviços..." />
-          </div>
-          <button id="refresh-status" class="btn">Atualizar</button>
+          <button id="toggle-sidebar-btn" class="btn btn-toggle-sidebar" title="Recolher menu">☰</button>
         </div>
       </header>
 
@@ -134,7 +129,6 @@
                 <h3>Sessões</h3>
                 <button class="btn-session-new" id="new-session-btn" title="Nova sessão">+</button>
               </div>
-              <p class="muted sessions-sub" id="sessions-sub">Selecione um agente para ver as sessões</p>
               <div id="sessions-list" class="sessions-list"></div>
             </aside>
 
@@ -143,7 +137,7 @@
               <div class="card chat-card">
                 <div class="card-head chat-head">
                   <div class="chat-agent">
-                    <div class="chat-avatar" id="chat-avatar">?</div>
+                    <div class="avatar" id="chat-avatar">?</div>
                     <div class="chat-agent-info">
                       <h3 id="chat-title">Conversas</h3>
                       <div class="chat-agent-badges">
@@ -193,23 +187,24 @@
                 </div>
               </div>
 
-              <!-- Timeline de Pipeline (horizontal) -->
-              <div class="pipeline-section" id="pipeline-section">
-                <div class="pipeline-header">
-                  <div class="pipeline-title-group">
-                    <h4>🔄 Pipeline de Execução</h4>
-                    <span class="pipeline-subtitle" id="pipeline-subtitle">Timeline em tempo real</span>
-                  </div>
-                  <div class="pipeline-summary" id="pipeline-summary"></div>
-                </div>
-                <div class="pipeline-track" id="pipeline-container">
-                  <div class="pipeline-empty">Nenhuma execução em andamento</div>
-                </div>
-                <div class="pipeline-footer" id="pipeline-footer">
-                  <div class="pipeline-progress-bar" id="pipeline-progress-bar"></div>
-                  <div class="pipeline-progress-text" id="pipeline-progress-text"></div>
-                </div>
+            </div>
+          </div>
+
+          <!-- Pipeline de Execução (largura total abaixo do chat) -->
+          <div class="pipeline-section" id="pipeline-section">
+            <div class="pipeline-header">
+              <div class="pipeline-title-group">
+                <h4>🔄 Pipeline de Execução</h4>
+                <span class="pipeline-subtitle" id="pipeline-subtitle">Timeline em tempo real</span>
               </div>
+              <div class="pipeline-summary" id="pipeline-summary"></div>
+            </div>
+            <div class="pipeline-track" id="pipeline-container">
+              <div class="pipeline-empty">Nenhuma execução em andamento</div>
+            </div>
+            <div class="pipeline-footer" id="pipeline-footer">
+              <div class="pipeline-progress-bar" id="pipeline-progress-bar"></div>
+              <div class="pipeline-progress-text" id="pipeline-progress-text"></div>
             </div>
           </div>
         </section>
@@ -331,6 +326,86 @@
           </div>
         </section>
       </main>
+    </div>
+  </div>
+
+  <!-- Drawer Lateral de Detalhes da Etapa -->
+  <div id="stage-drawer" class="drawer-overlay" style="display:none">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <div class="drawer-header-left">
+          <span class="drawer-icon" id="drawer-icon">○</span>
+          <div>
+            <h3 id="drawer-title">Detalhes da Etapa</h3>
+            <span class="drawer-subtitle" id="drawer-subtitle">Informações completas</span>
+          </div>
+        </div>
+        <div class="drawer-header-actions">
+          <button class="drawer-copy-btn" id="drawer-copy-btn" title="Copiar JSON">📋</button>
+          <button class="drawer-close" id="drawer-close">&times;</button>
+        </div>
+      </div>
+      <div class="drawer-tabs" id="drawer-tabs">
+        <button class="drawer-tab active" data-tab="input">Payload Entrada</button>
+        <button class="drawer-tab" data-tab="output">Payload Saída</button>
+        <button class="drawer-tab" data-tab="logs">Logs</button>
+        <button class="drawer-tab" data-tab="telemetry">Telemetria</button>
+        <button class="drawer-tab" data-tab="metrics">Métricas</button>
+        <button class="drawer-tab" data-tab="raw">JSON Bruto</button>
+      </div>
+      <div class="drawer-body" id="drawer-body">
+        <div class="drawer-tab-content active" id="drawer-tab-input">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">📥 Dados de Entrada</h4>
+            <pre class="drawer-code" id="drawer-input-content">Nenhum dado de entrada disponível.</pre>
+          </div>
+        </div>
+        <div class="drawer-tab-content" id="drawer-tab-output">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">📤 Dados de Saída</h4>
+            <pre class="drawer-code" id="drawer-output-content">Nenhum dado de saída disponível.</pre>
+          </div>
+        </div>
+        <div class="drawer-tab-content" id="drawer-tab-logs">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">📋 Logs Detalhados</h4>
+            <div class="drawer-logs" id="drawer-logs-content">
+              <div class="drawer-log-line log-info">⏱️ Etapa iniciada</div>
+              <div class="drawer-log-line log-info">✅ Etapa concluída</div>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-tab-content" id="drawer-tab-telemetry">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">📊 Telemetria</h4>
+            <div class="drawer-metrics-grid" id="drawer-telemetry-content">
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Duração</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Status</span><span class="drawer-metric-value">—</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-tab-content" id="drawer-tab-metrics">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">📈 Métricas Completas</h4>
+            <div class="drawer-metrics-grid" id="drawer-metrics-content">
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Tokens Enviados</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Tokens Recebidos</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Documentos</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Cache</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Modelo</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Provedor</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Latência LLM</span><span class="drawer-metric-value">—</span></div>
+              <div class="drawer-metric-item"><span class="drawer-metric-label">Temperatura</span><span class="drawer-metric-value">—</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-tab-content" id="drawer-tab-raw">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">🔧 JSON Bruto</h4>
+            <pre class="drawer-code" id="drawer-raw-content">Nenhum dado disponível.</pre>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
