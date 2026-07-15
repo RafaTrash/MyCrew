@@ -1887,46 +1887,6 @@ body {
   width: 100%;
 }
 
-/* Card de etapa em layout horizontal */
-.pipeline-card {
-  flex: 0 0 220px;
-  background: var(--bg-2);
-  border: 1px solid var(--panel-line);
-  border-radius: 14px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
-  position: relative;
-}
-
-.pipeline-card:hover {
-  border-color: rgba(124, 92, 255, 0.5);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  transform: translateY(-2px);
-}
-
-.pipeline-card.step-waiting {
-  opacity: 0.7;
-}
-
-.pipeline-card.step-running {
-  border-color: rgba(124, 92, 255, 0.5);
-  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.25);
-}
-
-.pipeline-card.step-running .step-status {
-  animation: statusPulse 1.4s ease-in-out infinite;
-}
-
-.pipeline-card.step-done {
-  border-color: rgba(53, 208, 165, 0.4);
-}
-
-.pipeline-card.step-error {
-  border-color: rgba(255, 107, 129, 0.4);
-}
 
 /* Conector horizontal entre cards */
 .pipeline-connector {
@@ -3205,13 +3165,7 @@ body {
   text-overflow: ellipsis;
 }
 
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.agent-sidebar-status {
+.agent-sidebar-meta {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3254,4 +3208,36 @@ body {
     position: static;
     max-height: none;
   }
+}
+
+/* ===== STEP TELEMETRY (inline in pipeline cards) ===== */
+.step-telemetry {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.step-telemetry-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--violet-2);
+  margin-bottom: 4px;
+}
+
+.step-telemetry-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  padding: 1px 0;
+}
+
+.step-telemetry-label {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.step-telemetry-value {
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 500;
 }

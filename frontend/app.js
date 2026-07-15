@@ -1036,10 +1036,18 @@ function renderNewPipeline(session) {
 }
 
 function getStageIcon(stage, status) {
+  const icons = {
+    memory: '🧠',
+    vector_search: '🔍',
+    redis_cache: '⚡',
+    prompt_build: '📝',
+    llm_call: '🤖',
+    response: '💬',
+  };
   if (status === 'done') return '✅';
   if (status === 'error') return '❌';
   if (status === 'running') return '⏳';
-  return '○';
+  return icons[stage] || '○';
 }
 
 function getStatusLabel(status) {
@@ -1050,6 +1058,18 @@ function getStatusLabel(status) {
     'waiting': 'Aguardando'
   };
   return labels[status] || status;
+}
+
+function getStageDescription(stage) {
+  const descriptions = {
+    memory: 'Verifica se essa pergunta (ou similar) já foi respondida antes, evitando reprocessamento.',
+    vector_search: 'Recupera os documentos mais relevantes da base de conhecimento via similaridade de embeddings.',
+    redis_cache: 'Verifica se uma resposta idêntica já está em cache para evitar chamada redundante ao modelo.',
+    prompt_build: 'Monta o prompt final combinando system prompt, histórico e documentos recuperados.',
+    llm_call: 'Envia o prompt final ao modelo selecionado e aguarda a geração da resposta.',
+    response: 'Resposta final formatada e entregue ao usuário na interface de chat.',
+  };
+  return descriptions[stage] || 'Etapa de processamento.';
 }
 
 function getStageSummary(stage, metadata) {
