@@ -65,6 +65,7 @@ from .database import (
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    CreateSessionRequest,
     FinalizeSessionRequest,
     FinalizeSessionResponse,
     FlowStartRequest,
@@ -80,9 +81,11 @@ from .schemas import (
     SshConnectRequest,
     SshConnectResponse,
 )
+
 from .chat.chat_manager import get_chat_manager
 from .chat.memory_extractor import extract_memory_from_conversation, save_memory
 from .chat.ws_chat import get_ws_handler
+
 
 app = FastAPI(title="MyCrew Backend", version="2.1.0")
 
@@ -1478,6 +1481,27 @@ async def finalize_chat_session(payload: FinalizeSessionRequest) -> FinalizeSess
             result["memory"] = save_result
     
     return FinalizeSessionResponse(**result)
+
+
+@app.post("/api/chat/sessions", response_model=SessionInfo)
+async def create_chat_session_endpoint(payload: CreateSessionRequest) -> SessionInfo:
+    """Cria nova sessão de chat via API REST."""
+    chat_manager = get_chat_manager()
+    persona = payload.persona_id.strip()
+    model = (payload.model or persona).strip()
+    session = chat_manager.create_session(
+        persona_id=persona,
+        model=model,
+        temperature=payload.temperature,
+    )
+    return SessionInfo(**session.to_dict())
+
+
+@app.get("/api/chat/sessions/by-persona/{persona_id}", response_model=list[SessionInfo])
+async def list_sessions_by_persona_endpoint(persona_id: str):
+    """Lista todas as sessões de um agente específico."""
+    chat_manager = get_chat_manager()
+    return chat_manager.list_sessions_by_persona(persona_id)
 
 
 @app.get("/api/chat/sessions", response_model=list[SessionInfo])

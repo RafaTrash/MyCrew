@@ -21,6 +21,15 @@ const state = {
   currentSessionId: null,
   pipelineActive: false,
   timelineItems: [],
+  currentAgentPipeline: null,
+  stepTelemetry: {},
+  // Pipeline e telemetria por agente (nova estrutura)
+  pipelineByAgent: {},
+  telemetryByAgent: {},
+  timelineSessionsByAgent: {},
+  // Sessões de chat por agente
+  sessionsByAgent: {},
+  activeSessionId: null,
 };
 
 let knowledgeSelectedPersonaId = null;
@@ -89,6 +98,20 @@ const finalizeSummary = document.getElementById("finalize-summary");
 const finalizeSummaryContent = document.getElementById("finalize-summary-content");
 const finalizeResult = document.getElementById("finalize-result");
 
+// Elementos do novo layout
+const pipelineSection = document.getElementById("pipeline-section");
+const pipelineContainer = document.getElementById("pipeline-container");
+const pipelineSubtitle = document.getElementById("pipeline-subtitle");
+const telemetrySection = document.getElementById("telemetry-section");
+const telemetryContainer = document.getElementById("telemetry-container");
+const telemetrySubtitle = document.getElementById("telemetry-subtitle");
+const agentsSidebar = document.getElementById("agents-sidebar");
+const agentsSidebarList = document.getElementById("agents-sidebar-list");
+const agentSearchSidebar = document.getElementById("agent-search-sidebar");
+const sessionsSidebar = document.getElementById("sessions-sidebar");
+const sessionsList = document.getElementById("sessions-list");
+const newSessionBtn = document.getElementById("new-session-btn");
+
 function esc(value) {
   var s = String(value || "");
   return s
@@ -97,6 +120,26 @@ function esc(value) {
     .replace(/>/g, function() { return "&" + "gt;"; })
     .replace(/"/g, function() { return "&" + "quot;"; })
     .replace(/'/g, function() { return "&#" + "39;"; });
+}
+
+// ===== MARKDOWN RENDERER =====
+function renderMarkdown(content) {
+  if (!content) return "";
+  // Sanitiza HTML básico antes do markdown
+  var sanitized = content || "";
+  // Remove script e iframe básicos
+  sanitized = sanitized.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  sanitized = sanitized.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, "");
+  // Remove handlers on* e javascript:
+  sanitized = sanitized.replace(/on\w+\s*=\s*(["'][^"']*["']|[^>\s]*)/gi, "");
+  sanitized = sanitized.replace(/javascript:\s*/gi, "");
+  
+  // Usa marked.js para renderizar markdown
+  if (window.marked) {
+    return window.marked.parse(sanitized);
+  }
+  // Fallback: escape simples
+  return esc(sanitized);
 }
 
 function ensurePersonaSelected() {
@@ -360,19 +403,71 @@ function renderChatHeader() {
       chatStatus.innerHTML = "<span class='dot'></span>selecione um agente";
     }
   }
+
+  const sessionTag = document.getElementById("session-tag");
+  const sessionIdText = document.getElementById("session-id-text");
+  if (sessionTag && sessionIdText) {
+    if (state.currentSessionId) {
+      sessionTag.style.display = "";
+      sessionIdText.textContent = state.currentSessionId.slice(0, 8);
+    } else {
+      sessionTag.style.display = "none";
+      sessionIdText.textContent = "";
+    }
+  }
+}
+
+function msgAvatarHtml(persona, extraClass = "") {
+  const label = esc(agentAvatarLabel(persona?.nome || "?"));
+  if (persona && persona.avatar) {
+    return `<div class='msg-avatar ${extraClass}'><span class='av-fallback'>${label}</span><img src='${esc(persona.avatar)}' alt='' onerror='this.remove()' /></div>`;
+  }
+  return `<div class='msg-avatar ${extraClass}'>${label}</div>`;
 }
 
 function renderChat() {
   renderChatHeader();
   const personaId = state.selectedPersona?.id;
+  const persona = state.selectedPersona;
+  
   if (!personaId) {
     chatLog.innerHTML = "<div class='msg assistant'>Selecione um agente para iniciar.</div>";
     return;
   }
   const history = state.historyByPersona[personaId] || [];
-  let html = history.length
-    ? history.map((item) => `<div class='msg ${item.role === "user" ? "user" : "assistant"}'>${esc(item.content)}</div>`).join("")
-    : "<div class='msg assistant'>Conversa iniciada. Pode mandar a primeira mensagem.</div>";
+  
+  // Build chat messages with proper grouping
+  let html = "";
+  let lastRole = null;
+  
+  history.forEach((item) => {
+    const role = item.role === "user" ? "user" : "assistant";
+    const isFirstInGroup = role !== lastRole;
+    
+    // Add timestamp for the message
+    const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : "";
+    
+    // For assistant messages, include avatar (uses same persona as sidebar)
+    let avatarHtml = "";
+    if (role === "assistant" && isFirstInGroup) {
+      avatarHtml = msgAvatarHtml(persona);
+    }
+    
+    // Use Markdown for assistant messages, plain text for user
+    const content = role === "assistant" ? renderMarkdown(item.content) : esc(item.content);
+    
+    html += `
+      <div class='msg ${role}' data-streaming='${item._streaming ? "true" : "false"}'>
+        ${avatarHtml}
+        <div class='bubble'>${content}${item._streaming ? "" : ""}</div>
+        <div class='msg-time'>${timeStr}</div>
+      </div>`;
+    lastRole = role;
+  });
+  
+  if (history.length === 0) {
+    html = "<div class='msg assistant'>Conversa iniciada. Pode mandar a primeira mensagem.</div>";
+  }
   if (state.typingPersonaId === personaId) {
     html += "<div class='msg assistant typing-bubble'><span></span><span></span><span></span></div>";
   }
@@ -380,17 +475,307 @@ function renderChat() {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+function renderAgentsSidebar() {
+  const empty = "<div class='model-empty'>Nenhum agente encontrado.</div>";
+  agentsSidebarList.innerHTML = state.personas.length
+    ? state.personas.map((p, i) => {
+        const st = agentStatus(p);
+        const selected = state.selectedPersona?.id === p.id ? "active" : "";
+        const lastTime = state.historyByPersona[p.id]?.length
+          ? formatTimeAgo(state.historyByPersona[p.id][state.historyByPersona[p.id].length - 1].timestamp)
+          : "";
+        return `<div class='agent-sidebar-card ${selected}' data-open='${i}'>
+          <div class='agent-sidebar-top'>
+            ${avatarHtml(p)}
+            <div class='agent-sidebar-info'>
+              <div class='agent-sidebar-name'>${esc(p.nome)}</div>
+              <div class='agent-sidebar-role'>${esc(p.papel || "Agente")}</div>
+            </div>
+          </div>
+          <div class='agent-sidebar-meta'>
+            <span class='agent-sidebar-status'><span class='dot ${st.cls}'></span>${esc(st.label)}</span>
+            <span class='agent-sidebar-model' title='${esc(p.model || "")}'>◆ ${esc(p.model || "modelo")}</span>
+          </div>
+          ${lastTime ? `<div class='agent-sidebar-time'>${esc(lastTime)}</div>` : ""}
+        </div>`;
+      }).join("")
+    : empty;
+
+  // Rebind events
+  agentsSidebarList.querySelectorAll(".agent-sidebar-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      selectPersonaByIndex(Number(card.getAttribute("data-open")), true);
+    });
+  });
+}
+
+// ===== Session List Functions =====
+
+function formatSessionTimeAgo(isoString) {
+  if (!isoString) return "";
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 1) return "agora";
+    if (minutes < 60) return `${minutes}min`;
+    if (hours < 24) return `${hours}h`;
+    if (days === 1) return "ontem";
+    return `${days}d`;
+  } catch {
+    return "";
+  }
+}
+
+function getSessionPreview(session) {
+  // Get last message content as preview
+  const messages = session.messages || [];
+  const lastMsg = messages[messages.length - 1];
+  if (!lastMsg) return "Nova conversa";
+  const content = lastMsg.content || "";
+  return content.length > 60 ? content.slice(0, 60) + "…" : content;
+}
+
+function renderSessionsList() {
+  if (!sessionsList) return;
+  const personaId = state.selectedPersona?.id;
+  const sessions = personaId ? (state.sessionsByAgent[personaId] || []) : [];
+  
+  if (!personaId) {
+    sessionsList.innerHTML = "<div class='model-empty'>Selecione um agente para ver as sessões</div>";
+    return;
+  }
+  
+  if (sessions.length === 0) {
+    sessionsList.innerHTML = "<div class='model-empty'>Nenhuma sessão ainda. Inicie uma nova conversa.</div>";
+    return;
+  }
+  
+  sessionsList.innerHTML = sessions.map((session) => {
+    const isActive = session.session_id === state.currentSessionId;
+    const statusCls = session.status === "active" ? "active" : "finalized";
+    const shortId = session.session_id ? session.session_id.slice(0, 8) : "";
+    
+    return `<div class='session-item ${isActive ? "active" : ""}' data-session-id='${session.session_id}'>
+      <div class='session-header'>
+        <span class='session-id'>#${esc(shortId)}</span>
+        <span class='session-status-badge ${statusCls}'>${session.status === "active" ? "Ativa" : "Finalizada"}</span>
+      </div>
+      <div class='session-preview'>${esc(getSessionPreview(session))}</div>
+      <div class='session-time'>${formatSessionTimeAgo(session.started_at)}</div>
+    </div>`;
+  }).join("");
+  
+  // Bind click events to load session history
+  sessionsList.querySelectorAll(".session-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const sessionId = item.getAttribute("data-session-id");
+      loadSessionHistory(sessionId);
+    });
+  });
+}
+
+async function loadSessionsForAgent(personaId) {
+  if (!personaId) return;
+  try {
+    const res = await fetch(`/api/chat/sessions/by-persona/${encodeURIComponent(personaId)}`);
+    if (!res.ok) {
+      console.warn("Failed to load sessions for agent:", personaId);
+      return;
+    }
+    const data = await res.json();
+    state.sessionsByAgent[personaId] = data || [];
+    renderSessionsList();
+  } catch (err) {
+    console.warn("Error loading sessions:", err);
+  }
+}
+
+async function createNewSession() {
+  const persona = state.selectedPersona;
+  if (!persona) return;
+  
+  // Create session in backend immediately
+  try {
+    const res = await fetch("/api/chat/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ persona_id: persona.id, model: persona.model, temperature: 0.7 })
+    });
+    const data = await res.json();
+    if (data.session_id) {
+      state.currentSessionId = data.session_id;
+    }
+  } catch (e) {
+    console.warn("Failed to create session in backend:", e);
+  }
+  
+  state.historyByPersona[persona.id] = [];
+  saveHistory();
+  
+  // Reset pipeline state
+  state.typingPersonaId = null;
+  state.timelineItems = [];
+  state.timelineSessions = {};
+  state.stepTelemetry = {};
+  state.pipelineActive = false;
+  
+  renderChat();
+  renderSessionsList();
+  
+  // Reload sessions to get updated list
+  loadSessionsForAgent(persona.id);
+}
+
+function loadSessionHistory(sessionId) {
+  // Load a session's history into the chat
+  const session = state.sessionsByAgent[state.selectedPersona?.id]?.find(s => s.session_id === sessionId);
+  if (!session) {
+    console.warn("Session not found:", sessionId);
+    return;
+  }
+  
+  // Set the session as active
+  state.currentSessionId = sessionId;
+  
+  // Load messages from the session
+  if (session.messages && session.messages.length > 0) {
+    state.historyByPersona[state.selectedPersona.id] = session.messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      timestamp: msg.timestamp,
+    }));
+  } else {
+    state.historyByPersona[state.selectedPersona.id] = [];
+  }
+  saveHistory();
+  
+  renderChat();
+  renderSessionsList();
+}
+
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return "";
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `${minutes}min`;
+  if (hours < 24) return `${hours}h`;
+  return `${days}d`;
+}
+
+function renderTelemetryForStage(stage, event) {
+  // Placeholder - can be enhanced later
+}
+
 function selectPersonaByIndex(index, jumpToChat = false) {
   const persona = state.personas[index];
   if (!persona) return;
+  
+  const previousPersona = state.selectedPersona;
   state.selectedPersona = persona;
   state.historyByPersona[persona.id] = state.historyByPersona[persona.id] || [];
   rememberSelected(persona.id);
+  
+  // Carrega sessões do agente selecionado
+  if (previousPersona?.id !== persona.id) {
+    loadSessionsForAgent(persona.id);
+  }
+  
+  // Atualiza todas as visualizações de agentes
   renderAgentContainers();
+  renderAgentsSidebar();
   renderChat();
+  
+  // Renderiza o pipeline do agente selecionado (sem reset)
+  restoreAgentPipeline(persona.id);
+  
   if (jumpToChat) {
     setActivePage("chat");
     chatInput.focus();
+  }
+}
+
+function saveAgentPipeline() {
+  if (!state.selectedPersona) return;
+  const agentId = state.selectedPersona.id;
+  state.pipelineByAgent[agentId] = {
+    timelineItems: state.timelineItems,
+    currentSessionId: state.currentSessionId,
+    pipelineActive: state.pipelineActive,
+    currentAgentPipeline: state.currentAgentPipeline,
+  };
+  state.telemetryByAgent[agentId] = { ...state.stepTelemetry };
+  state.timelineSessionsByAgent[agentId] = { ...state.timelineSessions };
+}
+
+function restoreAgentPipeline(agentId) {
+  const saved = state.pipelineByAgent[agentId];
+  if (saved) {
+    state.timelineItems = saved.timelineItems || [];
+    state.currentSessionId = saved.currentSessionId || null;
+    state.pipelineActive = saved.pipelineActive || false;
+    state.currentAgentPipeline = saved.currentAgentPipeline || null;
+  } else {
+    state.timelineItems = [];
+    state.currentSessionId = null;
+    state.pipelineActive = false;
+    state.currentAgentPipeline = null;
+  }
+  
+  state.stepTelemetry = state.telemetryByAgent[agentId] || {};
+  state.timelineSessions = state.timelineSessionsByAgent[agentId] || {};
+  
+  // Re-renderiza pipeline
+  if (state.currentSessionId && state.timelineSessions[state.currentSessionId]) {
+    renderNewPipeline(state.timelineSessions[state.currentSessionId]);
+  } else if (pipelineContainer) {
+    pipelineContainer.innerHTML = "<div class='pipeline-empty'>Nenhuma execução em andamento</div>";
+  }
+  
+  // Re-renderiza telemetria
+  if (telemetryContainer) {
+    if (Object.keys(state.stepTelemetry).length > 0) {
+      const lastTelemetry = Object.values(state.stepTelemetry)[0];
+      renderTelemetryFromMetrics(lastTelemetry);
+    } else {
+      telemetryContainer.innerHTML = "<div class='telemetry-empty'>Selecione uma etapa para ver detalhes</div>";
+    }
+  }
+}
+
+function resetAgentPipeline() {
+  if (!state.selectedPersona) return;
+  const agentId = state.selectedPersona.id;
+  state.pipelineByAgent[agentId] = {
+    timelineItems: [],
+    currentSessionId: null,
+    pipelineActive: false,
+    currentAgentPipeline: null,
+  };
+  state.telemetryByAgent[agentId] = {};
+  state.timelineSessionsByAgent[agentId] = {};
+  
+  state.timelineItems = [];
+  state.currentSessionId = null;
+  state.pipelineActive = false;
+  state.currentAgentPipeline = null;
+  state.stepTelemetry = {};
+  state.timelineSessions = {};
+  
+  if (pipelineContainer) {
+    pipelineContainer.innerHTML = "<div class='pipeline-empty'>Nenhuma execução em andamento</div>";
+  }
+  if (telemetryContainer) {
+    telemetryContainer.innerHTML = "<div class='telemetry-empty'>Selecione uma etapa para ver detalhes</div>";
   }
 }
 
@@ -500,6 +885,7 @@ async function loadPersonas() {
     state.personas = data.personas || [];
     console.log("Loaded personas:", state.personas.length);
     renderAgentContainers();
+    renderAgentsSidebar();
     if (!state.personas.length) return;
     let storedId = "";
     try { storedId = localStorage.getItem(SELECTED_KEY) || ""; } catch { storedId = ""; }
@@ -515,29 +901,194 @@ async function loadPersonas() {
 // ===== WebSocket Chat =====
 
 function resetTimeline() {
+  if (!state.selectedPersona) return;
+  const agentId = state.selectedPersona.id;
+  
   state.timelineItems = [];
-  if (epTimeline) {
-    epTimeline.innerHTML = "<div class='timeline-empty'>Aguardando mensagem...</div>";
+  state.timelineSessions = {};
+  state.stepTelemetry = {};
+  state.currentSessionId = null;
+  state.pipelineActive = false;
+  
+  // Persiste o reset no estado do agente
+  state.pipelineByAgent[agentId] = {
+    timelineItems: [],
+    currentSessionId: null,
+    pipelineActive: false,
+    currentAgentPipeline: null,
+  };
+  state.telemetryByAgent[agentId] = {};
+  state.timelineSessionsByAgent[agentId] = {};
+  
+  if (pipelineContainer) {
+    pipelineContainer.innerHTML = "<div class='pipeline-empty'>Nenhuma execução em andamento</div>";
   }
-  if (epMetrics) epMetrics.style.display = "none";
+  if (telemetryContainer) {
+    telemetryContainer.innerHTML = "<div class='telemetry-empty'>Selecione uma etapa para ver detalhes</div>";
+  }
+}
+
+function getOrCreateSession(sessionId) {
+  if (!state.timelineSessions[sessionId]) {
+    state.timelineSessions[sessionId] = {
+      id: sessionId,
+      startTime: Date.now(),
+      stages: [],
+      totalDuration: 0,
+    };
+  }
+  return state.timelineSessions[sessionId];
 }
 
 function addTimelineEvent(stage, label, status, durationMs, metadata) {
-  const icon = status === "done" ? "✅" : status === "error" ? "❌" : "⏳";
-  const statusClass = status === "done" ? "timeline-done" : status === "error" ? "timeline-error" : "timeline-running";
+  const session = getOrCreateSession(state.currentSessionId || "pending");
   
-  state.timelineItems.push({ stage, label, status, durationMs, metadata });
+  const event = { stage, label, status, durationMs, metadata };
+  session.stages.push(event);
   
-  if (epTimeline) {
-    const emptyEl = epTimeline.querySelector(".timeline-empty");
-    if (emptyEl) emptyEl.remove();
+  if (durationMs) {
+    session.totalDuration += durationMs;
+  }
+  
+  renderNewPipeline(session);
+  renderTelemetryForStage(stage, event);
+}
+
+function renderNewPipeline(session) {
+  if (!pipelineContainer) return;
+  
+  if (!session.stages || session.stages.length === 0) {
+    pipelineContainer.innerHTML = `
+      <div class='pipeline-empty'>
+        <div class='pipeline-empty-icon'>○</div>
+        <div>Aguardando etapas...</div>
+      </div>
+    `;
+    pipelineSubtitle.textContent = 'Nenhuma etapa iniciada';
+    return;
+  }
+  
+  const stagesHtml = session.stages.map((s, idx) => {
+    const statusClass = s.status === 'done' ? 'step-done' : s.status === 'error' ? 'step-error' : s.status === 'running' ? 'step-running' : 'step-waiting';
     
-    const durationHtml = durationMs ? `<span class='tl-duration'>${durationMs.toFixed(0)}ms</span>` : "";
-    const item = document.createElement("div");
-    item.className = `timeline-item ${statusClass}`;
-    item.innerHTML = `${icon} <span class='tl-label'>${esc(label)}</span> ${durationHtml}`;
-    epTimeline.appendChild(item);
-    epTimeline.scrollTop = epTimeline.scrollHeight;
+    // Render telemetria inline se existir
+    const telemetryHtml = s.metadata && Object.keys(s.metadata).length > 0 ? `
+      <div class='step-telemetry'>
+        <div class='step-telemetry-header'>📊 Telemetria</div>
+        ${Object.entries(s.metadata).map(([key, value]) => {
+          const label = key.replace(/_/g, ' ');
+          const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
+          return `<div class='step-telemetry-item'><span class='step-telemetry-label'>${esc(label)}</span><span class='step-telemetry-value'>${esc(displayValue)}</span></div>`;
+        }).join('')}
+      </div>
+    ` : '';
+    
+    // Resumo da etapa
+    const summary = getStageSummary(s.stage, s.metadata);
+    
+    return `
+      <div class='pipeline-card ${statusClass}' data-stage='${s.stage}'>
+        <div class='step-header'>
+          <div class='step-header-left'>
+            <span class='step-icon'>${getStageIcon(s.stage, s.status)}</span>
+            <div>
+              <div class='step-title'>${esc(s.label)}</div>
+              ${summary ? `<div class='step-summary'>${esc(summary)}</div>` : ''}
+            </div>
+          </div>
+          <span class='step-status status-${s.status}'>${getStatusLabel(s.status)}</span>
+        </div>
+        <div class='step-meta'>
+          ${s.durationMs ? `<span class='step-duration'>⏱ ${s.durationMs.toFixed(0)}ms</span>` : ''}
+          ${s.stage ? `<span class='step-badge'>${esc(s.stage)}</span>` : ''}
+        </div>
+        ${telemetryHtml}
+      </div>
+      ${idx < session.stages.length - 1 ? `<div class='pipeline-connector connector-${s.status}'><span class='pipeline-connector-arrow'>${s.status === 'done' ? '✓' : s.status === 'running' ? '●' : '→'}</span></div>` : ''}
+    `;
+  }).join('');
+  
+  const completed = session.stages.filter(s => s.status === 'done').length;
+  const total = session.stages.length;
+  const hasError = session.stages.some(s => s.status === 'error');
+  
+  const footerHtml = `
+    <span class='session-progress'>✅ ${completed}/${total} etapas</span>
+    ${session.totalDuration > 0 ? `<span class='session-total-time'>⏱️ ${formatDuration(session.totalDuration)}</span>` : ''}
+    ${hasError ? `<span class='session-error'>⚠️ Com erros</span>` : ''}
+  `;
+  
+  pipelineSubtitle.textContent = `${total} etapa(s) na sessão #${session.id.slice(0, 8)}`;
+  
+  pipelineContainer.innerHTML = `
+    <div class='pipeline-track'>
+      ${stagesHtml}
+    </div>
+    <div class='pipeline-footer'>
+      <div class='pipeline-progress-bar'>
+        <div class='pipeline-progress-fill' style='width:${total > 0 ? (completed / total * 100).toFixed(0) : 0}%'></div>
+      </div>
+      <div class='pipeline-progress-text'>
+        ${footerHtml}
+      </div>
+    </div>
+  `;
+}
+
+function getStageIcon(stage, status) {
+  if (status === 'done') return '✅';
+  if (status === 'error') return '❌';
+  if (status === 'running') return '⏳';
+  return '○';
+}
+
+function getStatusLabel(status) {
+  const labels = {
+    'done': 'Concluído',
+    'error': 'Erro',
+    'running': 'Executando',
+    'waiting': 'Aguardando'
+  };
+  return labels[status] || status;
+}
+
+function getStageSummary(stage, metadata) {
+  if (!metadata) return '';
+  
+  switch (stage) {
+    case 'memory':
+      return metadata.memory_found !== undefined 
+        ? (metadata.memory_found ? 'Memória anterior encontrada' : 'Sem memória anterior')
+        : '';
+      
+    case 'vector_search':
+      const parts = [];
+      if (metadata.documents_found !== undefined) parts.push(`${metadata.documents_found} documento(s)`);
+      if (metadata.top_k) parts.push(`Top ${metadata.top_k}`);
+      if (metadata.score !== undefined) parts.push(`Score: ${metadata.score.toFixed(3)}`);
+      return parts.join(' · ');
+      
+    case 'redis_cache':
+      return metadata.hit !== undefined ? (metadata.hit ? 'Cache HIT' : 'Cache MISS') : '';
+      
+    case 'prompt_build':
+      const promptParts = [];
+      if (metadata.context_chars) promptParts.push(`${metadata.context_chars.toLocaleString()} chars`);
+      if (metadata.messages_count) promptParts.push(`${metadata.messages_count} msgs`);
+      if (metadata.estimated_tokens) promptParts.push(`~${metadata.estimated_tokens.toLocaleString()} tokens`);
+      return promptParts.join(' · ');
+      
+    case 'llm_call':
+      const llmParts = [];
+      if (metadata.model) llmParts.push(metadata.model);
+      if (metadata.temperature) llmParts.push(`Temp: ${metadata.temperature}`);
+      return llmParts.join(' · ');
+      
+    case 'response':
+      return 'Processamento concluído';
+      
+    default:
+      return '';
   }
 }
 
@@ -575,6 +1126,40 @@ function updateMetrics(metrics) {
   setMetric("m-records", metrics.records_returned || "-");
 }
 
+function renderNewPipelineFromEvents() {
+  if (!pipelineContainer || !state.currentSessionId) return;
+  const session = state.timelineSessions[state.currentSessionId];
+  if (!session) return;
+  renderNewPipeline(session);
+}
+
+function renderTelemetryFromMetrics(metrics) {
+  if (!telemetryContainer || !metrics) return;
+  
+  const stageName = metrics.stage || 'geral';
+  const html = `
+    <div class='telemetry-card'>
+      <div class='telemetry-card-header'>
+        <span class='telemetry-step-badge'>${esc(stageName)}</span>
+        <span class='telemetry-step-time'>${new Date().toLocaleTimeString('pt-BR')}</span>
+      </div>
+      <div class='telemetry-metrics'>
+        ${metrics.total_duration_ms ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Tempo</span><span class='telemetry-metric-value'>${formatDuration(metrics.total_duration_ms)}</span></div>` : ''}
+        ${metrics.tokens_sent ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Tokens enviados</span><span class='telemetry-metric-value'>${metrics.tokens_sent.toLocaleString()}</span></div>` : ''}
+        ${metrics.tokens_received ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Tokens recebidos</span><span class='telemetry-metric-value'>${metrics.tokens_received.toLocaleString()}</span></div>` : ''}
+        ${metrics.documents_found ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Documentos</span><span class='telemetry-metric-value'>${metrics.documents_found}</span></div>` : ''}
+        ${metrics.redis_cache_hit !== undefined ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Cache Redis</span><span class='telemetry-metric-value'>${metrics.redis_cache_hit ? '✅ Hit' : '❌ Miss'}</span></div>` : ''}
+        ${metrics.model_used ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Modelo</span><span class='telemetry-metric-value'>${esc(metrics.model_used)}</span></div>` : ''}
+        ${metrics.temperature ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Temperatura</span><span class='telemetry-metric-value'>${metrics.temperature}</span></div>` : ''}
+        ${metrics.llm_latency_ms ? `<div class='telemetry-metric'><span class='telemetry-metric-label'>Latência LLM</span><span class='telemetry-metric-value'>${formatDuration(metrics.llm_latency_ms)}</span></div>` : ''}
+      </div>
+    </div>
+  `;
+  
+  telemetryContainer.innerHTML = html;
+}
+
+
 function connectChatWebSocket(message) {
   if (state.chatWs) {
     state.chatWs.close();
@@ -589,7 +1174,11 @@ function connectChatWebSocket(message) {
     : `ws://${window.location.host}/api/chat/ws`;
 
   state.pipelineActive = true;
-  resetTimeline();
+  // Não reseta timeline ao conectar - preserva dados existentes do agente
+  // Apenas cria nova sessão se necessário
+  if (!state.currentSessionId) {
+    resetTimeline();
+  }
 
   const ws = new WebSocket(wsUrl);
   state.chatWs = ws;
@@ -614,39 +1203,51 @@ function connectChatWebSocket(message) {
           console.log("Session started:", msg.session_id);
           break;
 
-        case "stage":
-          addTimelineEvent(
-            msg.stage,
-            msg.label,
-            msg.status,
-            msg.metadata?.duration_ms,
-            msg.metadata
-          );
-          break;
+          case "stage":
+            addTimelineEvent(
+              msg.stage,
+              msg.label,
+              msg.status,
+              msg.metadata?.duration_ms,
+              msg.metadata
+            );
+            break;
 
         case "token":
-          // Append token to current assistant message
+          // Append token to current assistant message - optimized streaming
           const personaId = state.selectedPersona?.id;
           if (personaId) {
             const history = state.historyByPersona[personaId] || [];
             const lastMsg = history[history.length - 1];
             if (lastMsg && lastMsg.role === "assistant") {
-              // Check if last message is being streamed
               if (!lastMsg._streaming) {
                 lastMsg._streaming = true;
                 lastMsg.content = msg.content;
+                renderChat();
               } else {
                 lastMsg.content += msg.content;
+                // Atualiza apenas o conteúdo da última bolha
+                const lastBubble = chatLog.querySelector(".msg.assistant .bubble:last-of-type");
+                if (lastBubble) {
+                  lastBubble.innerHTML = renderMarkdown(lastMsg.content);
+                  // Scroll suave se estiver perto do final
+                  const { scrollTop, scrollHeight, clientHeight } = chatLog;
+                  const isAtBottom = scrollTop + clientHeight >= scrollHeight - 30;
+                  if (isAtBottom) {
+                    chatLog.scrollTop = scrollHeight;
+                  }
+                }
               }
             } else {
               history.push({ role: "assistant", content: msg.content, _streaming: true });
+              renderChat();
             }
-            renderChat();
           }
           break;
 
         case "metrics":
           updateMetrics(msg.metrics);
+          renderTelemetryFromMetrics(msg.metrics);
           break;
 
         case "timeline":
@@ -661,6 +1262,9 @@ function connectChatWebSocket(message) {
           state.pipelineActive = false;
           state.typingPersonaId = null;
           state.currentSessionId = msg.session_id;
+          
+          // Salva estado do pipeline
+          saveAgentPipeline();
           
           // Finalize streaming message
           const pId = state.selectedPersona?.id;
@@ -694,6 +1298,7 @@ function connectChatWebSocket(message) {
         case "finalized":
           state.currentSessionId = null;
           state.pipelineActive = false;
+          saveAgentPipeline();
           if (finalizeResult) {
             finalizeResult.style.display = "";
             finalizeResult.textContent = JSON.stringify(msg, null, 2);
@@ -730,13 +1335,14 @@ async function sendChat() {
   state.historyByPersona[personaId] = state.historyByPersona[personaId] || [];
   const history = state.historyByPersona[personaId];
   
-  // Add user message
-  history.push({ role: "user", content: text });
+  // Add user message com timestamp
+  history.push({ role: "user", content: text, timestamp: Date.now() });
   chatInput.value = "";
   saveHistory();
   state.typingPersonaId = personaId;
   renderChat();
   renderAgentContainers();
+  renderAgentsSidebar();
 
   // Connect via WebSocket
   connectChatWebSocket(text);
@@ -813,6 +1419,7 @@ async function confirmFinalize() {
     // Reseta estado do pipeline
     state.currentSessionId = null;
     state.pipelineActive = false;
+    saveAgentPipeline();
     resetTimeline();
     
     // Fecha modal após 2 segundos
@@ -1427,6 +2034,19 @@ if (deviceModal) {
   deviceModal.addEventListener("click", (e) => { if (e.target === deviceModal) closeDeviceModal(); });
 }
 
+// Busca na sidebar de agentes
+if (agentSearchSidebar) {
+  agentSearchSidebar.addEventListener("input", () => {
+    const q = agentSearchSidebar.value.trim().toLowerCase();
+    agentsSidebarList.querySelectorAll(".agent-sidebar-card").forEach((card) => {
+      const idx = Number(card.getAttribute("data-open"));
+      const p = state.personas[idx];
+      const hit = !q || (p && `${p.nome} ${p.papel} ${p.model}`.toLowerCase().includes(q));
+      card.style.display = hit ? "" : "none";
+    });
+  });
+}
+
 // Initialize
 document.getElementById("refresh-status")?.addEventListener("click", () => { loadStatus(); loadModels(); loadPersonas(); });
 document.getElementById("send-chat")?.addEventListener("click", sendChat);
@@ -1439,6 +2059,25 @@ bindMenu();
 bindSearch();
 bindJumps();
 bindKnowledge();
+
+/* ===== Plan/Act visual toggle (sem lógica funcional) ===== */
+(function () {
+  const planBtn = document.getElementById("btn-plan");
+  const actBtn = document.getElementById("btn-act");
+  if (!planBtn || !actBtn) return;
+  const activate = (btn) => {
+    planBtn.classList.toggle("active", btn === planBtn);
+    actBtn.classList.toggle("active", btn === actBtn);
+  };
+  planBtn.addEventListener("click", () => activate(planBtn));
+  actBtn.addEventListener("click", () => activate(actBtn));
+})();
+
+// Bind new session button
+if (newSessionBtn) {
+  newSessionBtn.addEventListener("click", createNewSession);
+}
+
 loadStatus();
 loadModels();
 loadPersonas();

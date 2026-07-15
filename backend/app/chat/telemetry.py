@@ -125,18 +125,36 @@ class ExecutionTelemetry:
 
     def to_timeline(self) -> list[dict[str, Any]]:
         """Gera uma timeline ordenada dos eventos para exibição no frontend."""
+        # Ordem fixa do pipeline para exibição
+        stage_order = [
+            "memory",
+            "vector_search",
+            "redis_cache",
+            "postgres",
+            "prompt_build",
+            "llm_call",
+            "response",
+        ]
+        
+        # Ordena stages pela ordem do pipeline, mantendo apenas os que existem
+        sorted_stages = sorted(
+            self.stages.items(),
+            key=lambda x: stage_order.index(x[0]) if x[0] in stage_order else 999
+        )
+        
+        label_map = {
+            "memory": "🧠 Consulta memória",
+            "vector_search": "🔍 Busca vetorial (Qdrant)",
+            "postgres": "🗄️ Consulta PostgreSQL",
+            "redis_cache": "⚡ Cache Redis",
+            "prompt_build": "📝 Construção do Prompt",
+            "llm_call": "🤖 Chamada ao Modelo",
+            "response": "💬 Resposta recebida",
+        }
+        
         timeline = []
-        for name, stage in self.stages.items():
+        for name, stage in sorted_stages:
             icon = "✅" if stage.status == "done" else "❌" if stage.status == "error" else "⏳"
-            label_map = {
-                "memory": "🧠 Consulta memória",
-                "vector_search": "🔍 Busca vetorial (Qdrant)",
-                "postgres": "🗄️ Consulta PostgreSQL",
-                "redis_cache": "⚡ Cache Redis",
-                "prompt_build": "📝 Construção do Prompt",
-                "llm_call": "🤖 Chamada ao Modelo",
-                "response": "💬 Resposta recebida",
-            }
             label = label_map.get(name, name)
             timeline.append({
                 "stage": name,

@@ -107,6 +107,12 @@ class IoTDeviceResponse(IoTDeviceBase):
 
 # ===== Chat Session Schemas =====
 
+class CreateSessionRequest(BaseModel):
+    persona_id: str = Field(..., min_length=1)
+    model: Optional[str] = ""
+    temperature: float = 0.7
+
+
 class FinalizeSessionRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     option: str = Field(default="discard", pattern="^(discard|auto_save|approve)$")
@@ -134,6 +140,7 @@ class SessionInfo(BaseModel):
     started_at: str
     finalized_at: Optional[str] = None
     metrics: dict[str, Any] = {}
+    messages: list[dict[str, Any]] = []  # Para histórico da sessão
 
 
 class AgentStatusResponse(BaseModel):

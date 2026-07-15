@@ -6,6 +6,7 @@ Responsabilidades:
 - Controlar estado do agente (ocupado/ocioso)
 - Gerenciar contexto temporário por sessão
 - Coordenar finalização de conversa
+- Persistir sessões no PostgreSQL
 """
 
 from __future__ import annotations
@@ -17,6 +18,15 @@ from typing import Any, Optional
 from uuid import uuid4
 
 logger = logging.getLogger("mycrew.chat")
+
+
+def _datetime_to_iso(val: Any) -> str:
+    """Converte datetime para string ISO ou retorna string vazia."""
+    if val is None:
+        return ""
+    if isinstance(val, datetime):
+        return val.isoformat()
+    return str(val) if val else ""
 
 
 class ChatSession:
@@ -69,6 +79,7 @@ class ChatSession:
             "started_at": self.started_at,
             "finalized_at": self.finalized_at,
             "metrics": self.metrics,
+            "messages": self.messages,  # Inclui mensagens para histórico no frontend
         }
 
 
@@ -85,7 +96,7 @@ class ChatManager:
         model: str = "",
         temperature: float = 0.7,
     ) -> ChatSession:
-        """Cria nova sessão e marca agente como ocupado."""
+        """Cria nova sessão e marca agente como ocupado. Persiste no PostgreSQL."""
         session_id = str(uuid4())
         session = ChatSession(
             session_id=session_id,
@@ -95,6 +106,23 @@ class ChatManager:
         )
         self._sessions[session_id] = session
         self._agent_status[persona_id] = "occupied"
+
+        # Persiste sessão no PostgreSQL
+        try:
+            from ..database import get_db_cursor
+            with get_db_cursor(commit=True) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO mycrew_chat_sessions
+                    (id, persona_id, model, temperature, status, started_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (session_id, persona_id, model, temperature, "active", session.started_at)
+                )
+            logger.info("Session persisted in DB: %s", session_id)
+        except Exception as e:
+            logger.warning("Failed to persist session in DB: %s", e)
+
         logger.info(
             "Session created: %s for persona=%s model=%s",
             session_id, persona_id, model,
@@ -133,6 +161,43 @@ class ChatManager:
         session.status = "finalized" if option != "discard" else "discarded"
         session.finalized_at = _now_iso()
 
+        # Atualiza sessão no PostgreSQL
+        try:
+            from ..database import get_db_cursor
+            with get_db_cursor(commit=True) as cur:
+                # Salva mensagens no DB
+                for msg in session.messages:
+                    cur.execute(
+                        """
+                        INSERT INTO mycrew_chat_messages (session_id, role, content, timestamp)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (
+                            session_id,
+                            msg.get("role", "user"),
+                            msg.get("content", ""),
+                            msg.get("timestamp", _now_iso())
+                        )
+                    )
+                # Atualiza status da sessão
+                cur.execute(
+                    """
+                    UPDATE mycrew_chat_sessions
+                    SET status = %s, finalized_at = %s, total_messages = %s, metrics = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        session.status,
+                        session.finalized_at,
+                        len(session.messages),
+                        json.dumps(session.metrics),
+                        session_id
+                    )
+                )
+            logger.info("Session finalized and persisted in DB: %s", session_id)
+        except Exception as e:
+            logger.warning("Failed to persist session finalization in DB: %s", e)
+
         # Libera o agente
         self._agent_status[session.persona_id] = "idle"
 
@@ -170,6 +235,68 @@ class ChatManager:
             # Só libera agente se não houver outra sessão ativa
             if not self.get_active_session_by_persona(session.persona_id):
                 self._agent_status[session.persona_id] = "idle"
+
+    def list_sessions_by_persona(self, persona_id: str) -> list[dict[str, Any]]:
+        """Lista todas as sessões de um agente específico, ordenadas por atividade mais recente."""
+        # Primeiro tenta carregar do DB
+        try:
+            from ..database import get_db_cursor
+            with get_db_cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT s.id as session_id, s.persona_id, s.model, s.temperature,
+                           s.status, s.started_at, s.finalized_at, s.metrics,
+                           s.total_messages as message_count
+                    FROM mycrew_chat_sessions s
+                    WHERE s.persona_id = %s
+                    ORDER BY s.started_at DESC
+                    """,
+                    (persona_id,)
+                )
+                rows = cur.fetchall()
+                sessions = []
+                for row in rows:
+                    session = {
+                        "session_id": row["session_id"],
+                        "persona_id": row["persona_id"],
+                        "model": row["model"] or "",
+                        "temperature": row["temperature"] or 0.7,
+                        "status": row["status"],
+                        "message_count": row["message_count"] or 0,
+                        "started_at": _datetime_to_iso(row["started_at"]),
+                        "finalized_at": _datetime_to_iso(row["finalized_at"]) if row["finalized_at"] else None,
+                        "metrics": row["metrics"] or {},
+                        "messages": [],  # Carregado sob demanda
+                    }
+                    # Carrega mensagens
+                    cur.execute(
+                        """
+                        SELECT role, content, timestamp
+                        FROM mycrew_chat_messages
+                        WHERE session_id = %s
+                        ORDER BY timestamp ASC
+                        """,
+                        (row["session_id"],)
+                    )
+                    messages = cur.fetchall()
+                    session["messages"] = [
+                        {"role": m["role"], "content": m["content"], "timestamp": _datetime_to_iso(m["timestamp"])}
+                        for m in messages
+                    ]
+                    sessions.append(session)
+                if sessions:
+                    return sessions
+        except Exception as e:
+            logger.warning("Failed to load sessions from DB, using memory: %s", e)
+
+        # Fallback: usa sessões em memória
+        sessions = [
+            s.to_dict()
+            for s in self._sessions.values()
+            if s.persona_id == persona_id
+        ]
+        sessions.sort(key=lambda s: s.get("started_at", ""), reverse=True)
+        return sessions
 
     def list_active_sessions(self) -> list[dict[str, Any]]:
         return [
