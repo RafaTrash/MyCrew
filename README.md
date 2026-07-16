@@ -163,6 +163,7 @@ docker volume create mycrew_portainer_data
 docker volume create mycrew_uptime_kuma_data
 docker volume create mycrew_postgres_data
 docker volume create mycrew_litellm_data
+docker volume create mycrew_redis_data
 ```
 
 ## Subir ambiente

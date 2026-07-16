@@ -10,9 +10,9 @@
 #   COMPOSE_PROFILES=core,tools
 # =====================================================================
 
-# Âncora reutilizável de logging, aplicada em todos os serviços para
-# evitar que os logs cresçam indefinidamente (principalmente Dozzle,
-# Watchtower e n8n, que são bem verbosos).
+# Ancora reutilizavel de logging, aplicada em todos os servicos para
+# evitar que os logs crescam indefinidamente (principalmente Dozzle,
+# Watchtower e n8n, que sao bem verbosos).
 x-logging: &default-logging
   driver: json-file
   options:
@@ -21,11 +21,11 @@ x-logging: &default-logging
 
 services:
   # =====================================================================
-  # CORE - serviços essenciais para o MyCrew funcionar
+  # CORE - servicos essenciais para o MyCrew funcionar
   # =====================================================================
 
   ollama:
-    image: ollama/ollama:latest # TODO: pin em uma versão fixa (ver releases no Docker Hub/GitHub)
+    image: ollama/ollama:latest
     container_name: mycrew-ollama
     restart: unless-stopped
     profiles: ["core"]
@@ -36,9 +36,6 @@ services:
     networks:
       - ai_net
     logging: *default-logging
-    # Configuração explícita de GPU (funciona com `docker compose up`,
-    # não exige modo swarm). Ajuste `count` se quiser limitar a N GPUs
-    # em vez de usar todas.
     deploy:
       resources:
         reservations:
@@ -47,42 +44,11 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      # A imagem oficial do Ollama nao tem curl/wget instalado, entao
-      # usamos o proprio binario para checar se o servidor responde.
       test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
-
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main # TODO: pin em uma tag versionada (ex: v0.6.x)
-    container_name: mycrew-open-webui
-    restart: unless-stopped
-    profiles: ["core"]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    ports:
-      - "${OPEN_WEBUI_PORT:-3001}:8080"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_AUTH=True
-      - VECTOR_DB=qdrant
-      - QDRANT_URI=http://qdrant:6333
-      - QDRANT_COLLECTION_PREFIX=mycrew
-    volumes:
-      - open_webui_data:/app/backend/data
-    networks:
-      - ai_net
-    logging: *default-logging
-    healthcheck:
-      # Open WebUI expõe /health. Se a imagem não tiver curl, trocar por wget.
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      start_period: 30s  
 
   qdrant:
     image: qdrant/qdrant:v1.13.4
@@ -97,9 +63,6 @@ services:
       - ai_net
     logging: *default-logging
     healthcheck:
-      # Imagem do Qdrant (Debian slim) nao tem curl/wget/nc, so bash.
-      # Usamos /dev/tcp do bash para checar se a porta 6333 esta de pe.
-      # Nao valida o status HTTP da API, so que o processo esta escutando.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 30s
       timeout: 5s
@@ -107,12 +70,10 @@ services:
       start_period: 20s
 
   redis:
-    image: redis:7-alpine # dá pra fixar ainda mais, ex: redis:7.4-alpine
+    image: redis:7-alpine
     container_name: mycrew-redis
     restart: unless-stopped
     profiles: ["core"]
-    # Porta restrita ao loopback: acesso local para debug, nao exposta na LAN.
-    # O uso normal (n8n/litellm/python-webapp) e via rede interna ai_net.
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
@@ -127,29 +88,26 @@ services:
       retries: 5
       start_period: 30s
 
-  # ===== Banco de dados (movido para core: o LiteLLM depende dele) =====
+  # ===== Banco de dados =====
 
   postgres:
-    image: postgres:16-alpine # dá pra fixar ainda mais, ex: postgres:16.4-alpine
+    image: postgres:16-alpine
     container_name: mycrew-postgres
     restart: unless-stopped
     profiles: ["core"]
-    # Porta restrita ao loopback: acesso local para debug, nao exposta na LAN.
-    # Quem consome o Postgres (litellm) faz isso via rede interna ai_net.
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     environment:
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - POSTGRES_USER=${POSTGRES_USER:-litellm}
+      - POSTGRES_USER=${POSTGRES_USER:-mycrew}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
-      - POSTGRES_DB=${POSTGRES_DB:-litellm}
+      - POSTGRES_DB=${POSTGRES_DB:-mycrew}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - ai_net
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-litellm} -d ${POSTGRES_DB:-litellm}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mycrew} -d ${POSTGRES_DB:-mycrew}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -157,67 +115,12 @@ services:
 
   # ===== AI Gateway =====
 
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest # TODO: pin em uma versão fixa
-    container_name: mycrew-litellm
-    restart: unless-stopped
-    profiles: ["core"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    # Porta restrita ao loopback: acessivel via localhost na propria maquina,
-    # mas nao exposta na rede/LAN. O acesso "oficial" do stack ao LiteLLM
-    # deve ser via rede interna (ai_net), pelo python-webapp/n8n/open-webui.
-    ports:
-      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
-    environment:
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?Defina LITELLM_MASTER_KEY no .env}
-      - LITELLM_DATABASE_URL=postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-litellm}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - LITELLM_MODE=PRODUCTION
-      - LITELLM_LOG=INFO
-      - STORE_MODEL_IN_DB=True
-      - UI_USERNAME=${UI_USERNAME:-admin-litellm}
-      - UI_PASSWORD=${UI_PASSWORD:?Defina UI_PASSWORD no .env}
-      # Redis interno (rede ai_net), usado para cache de respostas do
-      # LiteLLM. Acessa pelo nome do servico na rede Docker, nao pela
-      # porta publicada em 127.0.0.1.
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    volumes:
-      - ./litellm/config.yaml:/app/config.yaml
-      - litellm_data:/app/data
-    command:
-      - "--config"
-      - "/app/config.yaml"
-      - "--port"
-      - "4000"
-    networks:
-      - ai_net
-    logging: *default-logging
-    healthcheck:
-      # Imagem so tem bash (sem curl/wget/nc). Checagem via /dev/tcp na porta 4000.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4000"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
   n8n:
-    image: n8nio/n8n:latest # TODO: pin em uma versão fixa
+    image: n8nio/n8n:latest
     container_name: mycrew-n8n
     restart: unless-stopped
     profiles: ["core"]
-    depends_on:
-      open-webui:
-        condition: service_healthy
+    depends_on:      
       qdrant:
         condition: service_healthy
       ollama:
@@ -235,10 +138,6 @@ services:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:?Defina N8N_BASIC_AUTH_PASSWORD no .env}
-      - OPENWEBUI_BASE_URL=http://open-webui:8080
-      - OPENWEBUI_API_BASE=http://open-webui:8080/api
-      - OPENWEBUI_API_KEY=${OPEN_WEBUI_API_KEY}
-      - OPENWEBUI_AGENT_PREFIX=${OPENWEBUI_AGENT_PREFIX:-custom-}
       - OLLAMA_BASE_URL=http://ollama:11434
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION_PREFIX=mycrew
@@ -248,20 +147,19 @@ services:
       - ai_net
     logging: *default-logging
     healthcheck:
-      # Imagem do n8n nao tem curl, mas tem wget (busybox/Alpine).
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5678/healthz"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-  # ===== Backend / Frontend do MyCrew =====
+  # ===== Backend do MyCrew =====
 
-  python-webapp:
+  backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: python-webapp
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mycrew-backend
     restart: unless-stopped
     profiles: ["core"]
     depends_on:
@@ -269,82 +167,70 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      n8n:
+      postgres:
         condition: service_healthy
     ports:
       - "${MYCREW_BACKEND_PORT:-8082}:80"
     environment:
-      - OPEN_WEBUI_URL=http://open-webui:8080
-      - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY}
-      - OPEN_WEBUI_TOKEN=${OPEN_WEBUI_TOKEN}
-      - N8N_URL=http://n8n:5678
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_REQUEST_TIMEOUT=${OLLAMA_REQUEST_TIMEOUT:-240}
       - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-512}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
-      - AGENTS_DIR=/app/agents
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-mycrew_agent_kb}
       - QDRANT_TOP_K=${QDRANT_TOP_K:-4}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
-      - N8N_CHAT_FLOW_WEBHOOK=${N8N_CHAT_FLOW_WEBHOOK:-}
-      - N8N_KNOWLEDGE_FLOW_WEBHOOK=${N8N_KNOWLEDGE_FLOW_WEBHOOK:-}
-      - PUBLIC_QDRANT_DASHBOARD=${PUBLIC_QDRANT_DASHBOARD:-http://localhost:${QDRANT_PORT:-6333}/dashboard}
-      - PUBLIC_DOZZLE=${PUBLIC_DOZZLE:-http://localhost:${DOZZLE_PORT:-8085}/dozzle}
-      - PUBLIC_PORTAINER=${PUBLIC_PORTAINER:-http://localhost:${PORTAINER_PORT:-9000}}
-      - PUBLIC_UPTIME_KUMA=${PUBLIC_UPTIME_KUMA:-http://localhost:${KUMA_PORT:-3002}}
-      - PUBLIC_AIDER=${PUBLIC_AIDER:-http://localhost:${AIDER_PORT:-8501}}
-      - PUBLIC_LITELLM=${PUBLIC_LITELLM:-http://localhost:${LITELLM_PORT:-4000}}
-      - MYCREW_CRYPTO_KEY=${MYCREW_CRYPTO_KEY:?Defina MYCREW_CRYPTO_KEY no .env}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-mycrew}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      - POSTGRES_DB=${POSTGRES_DB:-mycrew}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mycrew}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mycrew}
+      - MYCREW_CRYPTO_KEY=${MYCREW_CRYPTO_KEY:-tYYqiZd89uNTfzGsdudmuKGAd1aBTROyAVpet8v2WEs=}
     volumes:
       - ./agents:/app/agents
     networks:
       - ai_net
     logging: *default-logging
     healthcheck:
-      # Imagem so tem bash (sem curl/wget/nc). Usamos /dev/tcp para checar
-      # se a porta 80 esta respondendo, sem depender de uma rota /health
-      # especifica (nao confirmada no codigo do backend).
-      # Se o FastAPI tiver uma rota de health real, pode trocar por:
-      # test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/80 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/80"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-q", "-O", "/dev/null", "http://127.0.0.1:80/health"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
 
-  mycrew-frontend:
-    image: nginx:1.27-alpine
+  # ===== Frontend do MyCrew =====
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: mycrew-frontend
     restart: unless-stopped
     profiles: ["core"]
     depends_on:
-      python-webapp:
+      backend:
         condition: service_healthy
     ports:
-      - "${MYCREW_FRONTEND_PORT:-8081}:80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - "${MYCREW_FRONTEND_PORT:-8081}:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:80
     networks:
       - ai_net
     logging: *default-logging
     healthcheck:
-      # Usamos 127.0.0.1 (nao "localhost") porque o wget resolvia
-      # localhost para ::1 (IPv6) e o nginx so escuta em IPv4 (0.0.0.0),
-      # causando "Connection refused" mesmo com a app funcionando normal.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-q", "-O", "/dev/null", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
 
   # =====================================================================
   # TOOLS - ferramentas de apoio/observabilidade (opcionais)
   # =====================================================================
 
   dozzle:
-    image: amir20/dozzle:latest # TODO: pin em uma versão fixa
+    image: amir20/dozzle:latest
     container_name: mycrew-dozzle
     restart: unless-stopped
     profiles: ["tools"]
@@ -374,7 +260,7 @@ services:
     logging: *default-logging
 
   uptime-kuma:
-    image: louislam/uptime-kuma:1 # dá pra fixar ainda mais, ex: louislam/uptime-kuma:1.23.x
+    image: louislam/uptime-kuma:1
     container_name: mycrew-uptime-kuma
     restart: unless-stopped
     profiles: ["tools"]
@@ -386,63 +272,9 @@ services:
       - ai_net
     logging: *default-logging
 
-  aider:
-    image: paulgauthier/aider-full:latest # TODO: pin em uma versão fixa
-    container_name: mycrew-aider
-    restart: unless-stopped
-    profiles: ["tools"]
-    depends_on:
-      - ollama
-    ports:
-      - "${AIDER_PORT:-8501}:8501"
-    environment:
-      - OLLAMA_API_BASE=http://ollama:11434
-      - OLLAMA_CONTEXT_LENGTH=${AIDER_NUM_CTX:-16384}
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-      - GIT_CONFIG_GLOBAL=/tmp/.gitconfig
-    entrypoint: ["aider"]
-    command:
-      - "--model"
-      - "ollama_chat/${AIDER_MODEL:-qwen2.5-coder:7b}"
-      - "--gui"
-      - "--no-analytics"
-      - "--no-auto-commits"
-      - "--yes-always"
-      - "frontend/index.html"
-      - "frontend/app.js"
-    working_dir: /repo
-    volumes:
-      - ./:/repo
-    networks:
-      - ai_net
-    logging: *default-logging
-
-  # watchtower:
-  #   image: containrrr/watchtower:latest
-  #   container_name: mycrew-watchtower
-  #   restart: unless-stopped
-  #   profiles: ["tools"]
-  #   environment:
-  #     - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 4 * * *}
-  #     - WATCHTOWER_CLEANUP=true
-  #     - WATCHTOWER_INCLUDE_STOPPED=false
-  #     - WATCHTOWER_TIMEOUT=60s
-  #     - WATCHTOWER_RETRY=3
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   networks:
-  #     - ai_net
-  #   logging: *default-logging
-
 volumes:
   ollama_data:
     name: mycrew_ollama_data
-    external: true
-  open_webui_data:
-    name: mycrew_open_webui_data
     external: true
   qdrant_data:
     name: mycrew_qdrant_data
@@ -455,10 +287,7 @@ volumes:
     external: true
   uptime_kuma_data:
     name: mycrew_uptime_kuma_data
-    external: true
-  litellm_data:
-    name: mycrew_litellm_data
-    external: true
+    external: true  
   postgres_data:
     name: mycrew_postgres_data
     external: true
