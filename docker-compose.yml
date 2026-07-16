@@ -36,19 +36,20 @@ services:
     networks:
       - ai_net
     logging: *default-logging
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # GPU support: descomente a linha abaixo se tiver nvidia-container-toolkit instalado
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s  
+      start_period: 30s
 
   qdrant:
     image: qdrant/qdrant:v1.13.4
@@ -63,7 +64,7 @@ services:
       - ai_net
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      test: ["CMD-SHELL", "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/6333' 2>/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -187,8 +188,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-mycrew}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-mycrew}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mycrew}
       - MYCREW_CRYPTO_KEY=${MYCREW_CRYPTO_KEY:-tYYqiZd89uNTfzGsdudmuKGAd1aBTROyAVpet8v2WEs=}
-    volumes:
-      - ./agents:/app/agents
     networks:
       - ai_net
     logging: *default-logging
