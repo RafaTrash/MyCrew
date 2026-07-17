@@ -41,7 +41,35 @@ def encrypt_api_key(api_key: str) -> bytes:
     return cipher.encrypt(api_key.encode())
 
 
-def decrypt_api_key(encrypted: bytes) -> str:
+def decrypt_api_key(encrypted) -> str:
+    # Handle different types returned by PostgreSQL (memoryview, bytearray, etc.)
+    # Debug: log type for troubleshooting
+    # print(f"DEBUG: decrypt_api_key type={type(encrypted)}, value={repr(encrypted)[:100]}")
+    
+    if encrypted is None:
+        raise ValueError("api_key_encrypted is None")
+    
+    # Convert buffer types to bytes
+    if isinstance(encrypted, memoryview):
+        encrypted = bytes(encrypted)
+    elif isinstance(encrypted, bytearray):
+        encrypted = bytes(encrypted)
+    elif isinstance(encrypted, str):
+        # If somehow stored as base64 string
+        import base64
+        try:
+            encrypted = base64.b64decode(encrypted)
+        except Exception:
+            raise ValueError(f"api_key_encrypted is invalid string: {encrypted[:50]}...")
+    elif isinstance(encrypted, bytes):
+        pass  # Already bytes, proceed
+    else:
+        raise ValueError(f"api_key_encrypted has unexpected type: {type(encrypted)}")
+    
+    # Check if empty after conversion
+    if len(encrypted) == 0:
+        raise ValueError("api_key_encrypted is empty")
+    
     return cipher.decrypt(encrypted).decode()
 
 
@@ -342,9 +370,83 @@ async def configure_provider(
         raise HTTPException(status_code=500, detail=f"Erro ao configurar provedor: {str(e)}")
 
 
+@app.get("/me/providers/{provider_slug}/models")
+async def get_provider_models(provider_slug: str, request: Request):
+    """Get available models from a provider API"""
+    user = get_current_user(request)
+    try:
+        with get_db_connection() as conn:
+            # Get provider info
+            provider = conn.execute(text("""
+                SELECT p.id, p.slug, p.config FROM providers p WHERE p.slug = :slug
+            """), {"slug": provider_slug}).fetchone()
+            
+            if not provider:
+                raise HTTPException(status_code=404, detail=f"Provedor '{provider_slug}' não encontrado")
+            
+            # Get user's config for this provider
+            user_config = conn.execute(text("""
+                SELECT base_url, api_key_encrypted FROM user_provider_configs 
+                WHERE user_id = :user_id AND provider_id = :provider_id
+            """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+            
+            if not user_config:
+                raise HTTPException(status_code=400, detail="Configure o provedor antes de buscar modelos")
+            
+            base_url = user_config[0]
+            if not base_url:
+                base_url = "https://openrouter.ai/api"  # Default for OpenRouter
+            
+            # Convert any buffer type to bytes first
+            api_key_encrypted = user_config[1]
+            if isinstance(api_key_encrypted, (memoryview, bytearray)):
+                api_key_encrypted = bytes(api_key_encrypted)
+            
+            if not api_key_encrypted or len(api_key_encrypted) == 0:
+                raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
+            
+            api_key = decrypt_api_key(api_key_encrypted)
+            
+            # Fetch models from API
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(
+                        f"{base_url}/v1/models",
+                        headers={"Authorization": f"Bearer {api_key}"}
+                    )
+                    
+                    if response.status_code == 401:
+                        raise HTTPException(status_code=401, detail="API key inválida ou expirada")
+                    elif response.status_code != 200:
+                        raise HTTPException(status_code=502, detail=f"Erro na API: status {response.status_code}")
+                    
+                    data = response.json()
+                    models = data.get("data", [])
+                    
+                    # Format model list
+                    formatted_models = [
+                        {
+                            "id": m.get("id"),
+                            "name": m.get("id"),
+                            "description": m.get("name", ""),
+                            "context": formatContext(m.get("context_length", 8192))
+                        }
+                        for m in models
+                    ]
+                    
+                    return {"models": formatted_models}
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Falha na conexão: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar modelos: {str(e)}")
+
+
 @app.get("/me/providers/{provider_slug}/test-connection")
 async def test_provider_connection(provider_slug: str, request: Request):
-    """Test connection to a provider API"""
+    """Test connection to a provider API, optionally check if specific model exists"""
+    model_name = request.query_params.get("modelName")
     user = get_current_user(request)
     try:
         with get_db_connection() as conn:
@@ -365,31 +467,40 @@ async def test_provider_connection(provider_slug: str, request: Request):
             if not user_config:
                 raise HTTPException(status_code=400, detail="Configure o provedor antes de testar conexão")
             
-            base_url = user_config[0]
-            if not base_url:
-                base_url = "https://openrouter.ai/api"  # Default for OpenRouter
+            base_url = user_config[0] or "https://openrouter.ai/api"
             
-            api_key = decrypt_api_key(user_config[1]) if user_config[1] else None
+            api_key_encrypted = user_config[1]
+            if isinstance(api_key_encrypted, (memoryview, bytearray)):
+                api_key_encrypted = bytes(api_key_encrypted)
             
-            if not api_key:
+            if not api_key_encrypted or len(api_key_encrypted) == 0:
                 raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
             
-            # Test connection based on provider type
-            config = provider[2] or {}
+            api_key = decrypt_api_key(api_key_encrypted)
             
-            # Check if provider uses OpenAI-compatible API (openrouter, openai, mistral, etc.)
+            config = provider[2] or {}
             api_format = config.get("api_format", "")
             is_openai_compatible = api_format in ["openai", "openai_compatible"]
             
             if provider_slug == 'openrouter' or is_openai_compatible:
-                # OpenAI-compatible API test
                 try:
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         response = await client.get(
                             f"{base_url}/v1/models",
                             headers={"Authorization": f"Bearer {api_key}"}
                         )
+                    
                     if response.status_code == 200:
+                        # If model_name provided, check if model exists
+                        if model_name:
+                            data = response.json()
+                            models = data.get("data", [])
+                            model_found = any(
+                                m.get("id") == model_name or m.get("name", "").lower() == model_name.lower()
+                                for m in models
+                            )
+                            return {"connected": True, "modelFound": model_found, 
+                                    "message": "Conexão estabelecida" + (" - modelo encontrado" if model_found else " - modelo não encontrado")}
                         return {"connected": True, "message": "Conexão estabelecida com sucesso"}
                     elif response.status_code == 401:
                         raise HTTPException(status_code=401, detail="API key inválida ou expirada")
@@ -540,7 +651,11 @@ async def create_model(payload: CreateModelPayload, request: Request):
                 base_url = user_config[1] or "https://openrouter.ai/api"
                 api_key_encrypted = user_config[2]
                 
-                if api_key_encrypted:
+                # Convert any buffer type to bytes first
+                if isinstance(api_key_encrypted, (memoryview, bytearray)):
+                    api_key_encrypted = bytes(api_key_encrypted)
+                
+                if api_key_encrypted and len(api_key_encrypted) > 0:
                     api_key = decrypt_api_key(api_key_encrypted)
                     if api_key:
                         # Try to get model info from API

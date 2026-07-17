@@ -335,6 +335,61 @@ SELECT gen_random_uuid(), 'xAI (Grok)', 'api', 'xai',
     '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
     true, now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'xai');
+
+-- Novos providers adicionados
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Anyscale', 'api', 'anyscale',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'anyscale');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'AWS Bedrock', 'api', 'bedrock',
+    '{"api_format": "bedrock", "requires_api_key": true, "requires_base_url": false}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'bedrock');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Cerebras', 'api', 'cerebras',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'cerebras');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'DeepInfra', 'api', 'deepinfra',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'deepinfra');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Fireworks AI', 'api', 'fireworks',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'fireworks');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Hyperbolic', 'api', 'hyperbolic',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'hyperbolic');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Modal Labs', 'api', 'modal',
+    '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'modal');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Replicate', 'api', 'replicate',
+    '{"api_format": "replicate", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'replicate');
+
+INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'Google Vertex AI', 'api', 'vertex',
+    '{"api_format": "google_vertex_ai", "requires_api_key": true}'::jsonb,
+    true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'vertex');
 EOFSQL
 
 echo "Seed de providers aplicado. Atualizando configurações de providers a partir do .env..."
@@ -364,16 +419,25 @@ cipher = Fernet(CRYPTO_KEY.encode())
 ENVS_TO_SLUGS = {
     'ANTHROPIC_API_KEY': 'anthropic',
     'AZURE_OPENAI_API_KEY': 'azure-openai',
+    'ANYSCALE_API_KEY': 'anyscale',
+    'BEDROCK_API_KEY': 'bedrock',
+    'CEREBRAS_API_KEY': 'cerebras',
     'COHERE_API_KEY': 'cohere',
+    'DEEPINFRA_API_KEY': 'deepinfra',
     'DEEPSEEK_API_KEY': 'deepseek',
+    'FIREWORKS_API_KEY': 'fireworks',
     'GOOGLE_GEMINI_API_KEY': 'google-gemini',
     'GROQ_API_KEY': 'groq',
     'HUGGIN_FACE_API_KEY': 'huggingface-inference',
+    'HYPERBOLIC_API_KEY': 'hyperbolic',
     'MISTRAL_API_KEY': 'mistral',
+    'MODAL_API_KEY': 'modal',
     'OPENAI_API_KEY': 'openai',
     'OPENROUTER_API_KEY': 'openrouter',
     'PERPLEXITY_API_KEY': 'perplexity',
+    'REPLICATE_API_KEY': 'replicate',
     'TOGETHERAI_API_KEY': 'together-ai',
+    'VERTEX_API_KEY': 'vertex',
     'XAIGROK_API_KEY': 'xai',
 }
 

@@ -308,6 +308,7 @@ export function ModelsView() {
         onClose={() => setModelDialogOpen(false)}
         onSubmit={handleSubmitModel}
         token={token}
+        providers={providers}
       />
 
       <ConfigureProviderDialog

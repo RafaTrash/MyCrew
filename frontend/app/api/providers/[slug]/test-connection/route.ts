@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082'
 
-export async function GET(request: NextRequest, { params }: { params: { slug: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const authHeader = request.headers.get('authorization')
+  const { slug } = await params
 
   try {
-    const res = await fetch(`${BACKEND_URL}/me/providers/${params.slug}/test-connection`, {
+    const res = await fetch(`${BACKEND_URL}/me/providers/${slug}/test-connection`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

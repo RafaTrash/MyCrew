@@ -1,36 +1,46 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Server, X, Wifi, WifiOff } from 'lucide-react'
+import { Loader2, Server, X, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import type { CreateModelPayload, Provider } from '@/lib/types'
 import { hasProviderLogo } from '@/lib/provider-logo'
+
+interface AvailableModel {
+  id: string
+  name: string
+  description?: string
+  context?: string
+}
 
 interface AddModelDialogProps {
   open: boolean
   onClose: () => void
   onSubmit: (payload: CreateModelPayload) => Promise<void>
   token?: string | null
+  providers?: Provider[]
 }
 
-export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialogProps) {
-  const [providers, setProviders] = useState<Provider[]>([])
+export function AddModelDialog({ open, onClose, onSubmit, token, providers = [] }: AddModelDialogProps) {
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [modelName, setModelName] = useState('')
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [loadingProviders, setLoadingProviders] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error' | 'model_not_found'>('idle')
 
   useEffect(() => {
     if (open) {
       setSelectedProviderId('')
       setModelName('')
+      setAvailableModels([])
+      setShowModelDropdown(false)
       setError(null)
       setConnectionStatus('idle')
-      loadProviders()
     }
   }, [open])
 
@@ -42,48 +52,86 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  async function loadProviders() {
-    setLoadingProviders(true)
-    try {
-      const res = await fetch('/api/providers')
-      if (res.ok) {
-        const data = await res.json()
-        setProviders(data.providers || [])
+  // Buscar modelos quando um provider API é selecionado
+  useEffect(() => {
+    async function fetchModels() {
+      if (!selectedProviderId) {
+        setAvailableModels([])
+        return
       }
-    } catch {
-      // Silently fail, providers list will be empty
-    } finally {
-      setLoadingProviders(false)
+      
+      const provider = providers.find(p => p.id === selectedProviderId)
+      if (!provider || !provider.slug || provider.type !== 'api' || !provider.hasApiKey) {
+        setAvailableModels([])
+        return
+      }
+
+      setLoadingModels(true)
+      try {
+        const res = await fetch(`/api/providers/${provider.slug}/models`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setAvailableModels(data.models || [])
+          setShowModelDropdown(data.models && data.models.length > 0)
+        }
+      } catch {
+        // Silently fail - keep input field
+      } finally {
+        setLoadingModels(false)
+      }
     }
-  }
+    fetchModels()
+  }, [selectedProviderId, providers, token])
 
   if (!open) return null
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId)
 
   async function handleTestConnection() {
-    if (!selectedProvider || !selectedProvider.slug) return
+    if (!selectedProviderId) return
     
-    // Only test connection for configured API providers
-    const providerInList = providers.find(p => p.id === selectedProviderId)
-    if (!providerInList || providerInList.type !== 'api' || !providerInList.hasApiKey) return
+    const providerForTest = providers.find(p => p.id === selectedProviderId)
+    if (!providerForTest) {
+      setError('Provedor não encontrado')
+      return
+    }
+    
+    if (!providerForTest.slug) {
+      setError('Provedor não possui slug configurado')
+      return
+    }
+    
+    if (providerForTest.type !== 'api' || !providerForTest.hasApiKey) return
 
     setTestingConnection(true)
     setConnectionStatus('idle')
     setError(null)
 
     try {
-      const res = await fetch(`/api/providers/${selectedProvider.slug}/test-connection`, {
+      // Build URL with optional modelName query param
+      const url = modelName.trim() 
+        ? `/api/providers/${providerForTest.slug}/test-connection?modelName=${encodeURIComponent(modelName.trim())}`
+        : `/api/providers/${providerForTest.slug}/test-connection`
+      
+      const res = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
       
+      const body = await res.json().catch(() => ({}))
+      
       if (res.ok) {
-        setConnectionStatus('success')
+        if (modelName.trim() && body.modelFound === false) {
+          setConnectionStatus('model_not_found')
+          setError('Modelo não encontrado nesse provedor')
+        } else {
+          setConnectionStatus('success')
+        }
       } else {
-        const body = await res.json().catch(() => ({}))
         setConnectionStatus('error')
         setError(body.error || 'Falha ao testar conexão')
       }
@@ -108,18 +156,21 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
       return
     }
 
-    // Check if user has configured this provider (for API providers only)
-    // Local providers (like Ollama) don't require prior configuration
-    const providerInList = providers.find(p => p.id === selectedProviderId)
-    if (providerInList && providerInList.type === 'api' && !providerInList.hasApiKey) {
-      setError(`Configure o provedor '${providerInList.name}' antes de adicionar modelos.`)
+    const providerForSubmit = providers.find(p => p.id === selectedProviderId)
+    if (!providerForSubmit) {
+      setError('Provedor não encontrado')
+      return
+    }
+
+    if (providerForSubmit.type === 'api' && !providerForSubmit.hasApiKey) {
+      setError(`Configure o provedor '${providerForSubmit.name}' antes de adicionar modelos.`)
       return
     }
 
     setSubmitting(true)
     try {
       await onSubmit({
-        providerSlug: selectedProvider?.slug || '',
+        providerSlug: providerForSubmit.slug || '',
         modelName: modelName.trim(),
       })
       onClose()
@@ -130,8 +181,16 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
     }
   }
 
-  // Show test button only for configured API providers
-  const showTestButton = selectedProvider?.type === 'api' && selectedProvider.hasApiKey
+  const showTestButton = selectedProvider?.type === 'api' && selectedProvider?.hasApiKey
+
+  // Texto do botão de teste baseado no status
+  function getTestButtonText() {
+    if (testingConnection) return 'Testando...'
+    if (connectionStatus === 'success') return modelName.trim() ? 'Conectado ✓' : 'Conectado'
+    if (connectionStatus === 'model_not_found') return 'Modelo não encontrado'
+    if (connectionStatus === 'error') return 'Erro'
+    return 'Testar Conexão'
+  }
 
   return (
     <div
@@ -173,12 +232,7 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {/* Provedor (dropdown) */}
           <Field label="Provedor" htmlFor="providerSelect">
-            {loadingProviders ? (
-              <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                Carregando provedores...
-              </div>
-            ) : providers.length === 0 ? (
+            {providers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                 Nenhum provedor disponível. Configure um provedor primeiro.
               </div>
@@ -216,16 +270,39 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
             )}
           </Field>
 
-          {/* Nome do modelo */}
+          {/* Nome do modelo - input or dropdown */}
           <Field label="Nome do modelo" htmlFor="modelName">
-            <input
-              id="modelName"
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              placeholder="gpt-4o-mini, claude-3-opus..."
-              className={cn(inputClass, 'font-mono text-xs')}
-              autoComplete="off"
-            />
+            {showModelDropdown && availableModels.length > 0 ? (
+              <div className="relative">
+                <select
+                  id="modelName"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  className={cn(inputClass, 'appearance-none')}
+                >
+                  <option value="">Selecione um modelo...</option>
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                {loadingModels && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input
+                id="modelName"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder="gpt-4o-mini, claude-3-opus..."
+                className={cn(inputClass, 'font-mono text-xs')}
+                autoComplete="off"
+              />
+            )}
           </Field>
 
           {error && (
@@ -251,6 +328,8 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
                   'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60',
                   connectionStatus === 'success'
                     ? 'bg-success/20 text-success hover:bg-success/30'
+                    : connectionStatus === 'model_not_found'
+                    ? 'bg-warning/20 text-warning hover:bg-warning/30'
                     : connectionStatus === 'error'
                     ? 'bg-destructive/20 text-destructive hover:bg-destructive/30'
                     : 'border border-border bg-background text-foreground hover:bg-accent'
@@ -260,12 +339,14 @@ export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialo
                   <Loader2 className="size-4 animate-spin" />
                 ) : connectionStatus === 'success' ? (
                   <Wifi className="size-4" />
+                ) : connectionStatus === 'model_not_found' ? (
+                  <RefreshCw className="size-4" />
                 ) : connectionStatus === 'error' ? (
                   <WifiOff className="size-4" />
                 ) : (
                   <Wifi className="size-4" />
                 )}
-                {testingConnection ? 'Testando...' : connectionStatus === 'success' ? 'Conectado' : 'Testar Conexão'}
+                {getTestButtonText()}
               </button>
             )}
             <button
