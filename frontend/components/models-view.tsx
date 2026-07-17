@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import useSWR from 'swr'
-import { Activity, Boxes, Plus, RefreshCw, Loader2, Server, Timer, Zap } from 'lucide-react'
+import { Activity, Boxes, Plus, RefreshCw, Loader2, Server, Timer, Zap, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CreateModelPayload, Provider } from '@/lib/types'
 import { ProviderCard } from './provider-card'
 import { AddModelDialog } from './add-model-dialog'
-import { AddProviderDialog } from './add-provider-dialog'
+import { ConfigureProviderDialog } from './configure-provider-dialog'
 import { formatCompact } from './mini-charts'
+import { useAuth } from '@/lib/auth-context'
 
 interface ModelsResponse {
   providers: Provider[]
@@ -18,8 +19,6 @@ interface ModelsResponse {
 interface SyncResponse extends ModelsResponse {
   synced: number
 }
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 function computeSummary(providers: Provider[]) {
   let requests = 0
@@ -52,13 +51,20 @@ function computeSummary(providers: Provider[]) {
 }
 
 export function ModelsView() {
+  const { user, token, logout } = useAuth()
+  
   const { data, isLoading, isValidating, mutate } = useSWR<ModelsResponse>(
-    '/api/models',
-    fetcher,
+    token ? ['/api/models'] : null,
+    (url: string) => fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then((r) => r.json()),
+    { revalidateOnFocus: false }
   )
+  
   const [modelDialogOpen, setModelDialogOpen] = useState(false)
-  const [providerDialogOpen, setProviderDialogOpen] = useState(false)
+  const [configureDialogOpen, setConfigureDialogOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
   const providers = data?.providers ?? []
   const totalModels = data?.totalModels ?? 0
@@ -71,7 +77,10 @@ export function ModelsView() {
   async function handleSubmitModel(payload: CreateModelPayload) {
     const res = await fetch('/api/models', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(payload),
     })
     if (!res.ok) {
@@ -81,43 +90,55 @@ export function ModelsView() {
     await mutate()
   }
 
-  async function handleSubmitProvider(payload: {
-    name: string
-    type: 'api'
-    slug: string
-    baseUrl: string
-    apiKey: string
-  }) {
-    const res = await fetch('/api/providers', {
+  async function handleSubmitProviderConfig(slug: string, payload: { baseUrl?: string; apiKey?: string }) {
+    const res = await fetch(`/api/providers/${slug}/configure`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(payload),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.error ?? 'Falha ao salvar o provedor.')
+      throw new Error(body.error ?? 'Falha ao configurar o provedor.')
     }
     await mutate()
   }
 
   async function handleSync() {
     setSyncing(true)
+    setSyncMessage(null)
     try {
       const res = await fetch('/api/models/sync', {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        console.error('Erro ao sincronizar:', body.error ?? 'Falha na sincronização')
+        setSyncMessage(`Erro: ${body.error ?? 'Falha na sincronização'}`)
+      } else {
+        const data = await res.json()
+        setSyncMessage(`Sincronizado com sucesso! ${data.synced ?? 0} modelos encontrados.`)
       }
-      // Always refresh data from DB after sync attempt
       await mutate()
     } catch (err) {
-      console.error('Erro ao sincronizar:', err)
+      setSyncMessage(`Erro de conexão: ${err instanceof Error ? err.message : 'Tente novamente'}`)
       await mutate()
     } finally {
       setSyncing(false)
     }
+  }
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user && !isLoading) {
+      window.location.href = '/login'
+    }
+  }, [user, isLoading])
+
+  if (!user && !isLoading) {
+    return null
   }
 
   return (
@@ -132,31 +153,53 @@ export function ModelsView() {
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {totalModels}
             </span>
+            {user && (
+              <span className="flex items-center gap-1 rounded-full bg-secondary/50 px-2 py-0.5 text-xs text-muted-foreground">
+                <Lock className="size-3" />
+                {user.username}
+              </span>
+            )}
+            <button
+              onClick={logout}
+              className="rounded-full bg-secondary/50 px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              Sair
+            </button>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Modelos locais (Ollama) e provedores externos via API.
+            Modelos locais (Ollama) e provedores externos via API. Configure os provedores antes de adicionar modelos.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col items-start gap-1">
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing || isValidating || !token}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
+            >
+              <RefreshCw
+                className={cn('size-4', (syncing || isValidating) && 'animate-spin')}
+              />
+              {syncing ? 'Sincronizando...' : 'Atualizar'}
+            </button>
+            {syncMessage && (
+              <span className={cn(
+                'text-xs px-1',
+                syncMessage.startsWith('Erro') ? 'text-destructive' : 'text-success'
+              )}>
+                {syncMessage}
+              </span>
+            )}
+          </div>
           <button
             type="button"
-            onClick={handleSync}
-            disabled={syncing || isValidating}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
-          >
-            <RefreshCw
-              className={cn('size-4', (syncing || isValidating) && 'animate-spin')}
-            />
-            {syncing ? 'Sincronizando...' : 'Atualizar'}
-          </button>
-          <button
-            type="button"
-            onClick={() => providerDialogOpen ? null : setProviderDialogOpen(true)}
+            onClick={() => setConfigureDialogOpen(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             <Plus className="size-4" />
-            Adicionar provedor
+            Configurar provedor
           </button>
           <button
             type="button"
@@ -239,24 +282,16 @@ export function ModelsView() {
       ) : providers.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            Nenhum provedor cadastrado ainda.
+            Nenhum provedor configurado ainda. Configure um provedor para começar.
           </p>
           <div className="mt-3 flex items-center justify-center gap-3">
             <button
               type="button"
-              onClick={() => setProviderDialogOpen(true)}
+              onClick={() => setConfigureDialogOpen(true)}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
             >
               <Plus className="size-4" />
-              Adicionar provedor
-            </button>
-            <button
-              type="button"
-              onClick={() => setModelDialogOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-            >
-              <Plus className="size-4" />
-              Adicionar modelo
+              Configurar provedor
             </button>
           </div>
         </div>
@@ -272,12 +307,14 @@ export function ModelsView() {
         open={modelDialogOpen}
         onClose={() => setModelDialogOpen(false)}
         onSubmit={handleSubmitModel}
+        token={token}
       />
 
-      <AddProviderDialog
-        open={providerDialogOpen}
-        onClose={() => setProviderDialogOpen(false)}
-        onSubmit={handleSubmitProvider}
+      <ConfigureProviderDialog
+        open={configureDialogOpen}
+        providers={providers}
+        onClose={() => setConfigureDialogOpen(false)}
+        onSubmit={handleSubmitProviderConfig}
       />
     </div>
   )

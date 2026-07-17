@@ -1,22 +1,10 @@
-import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import type { Metadata } from 'next'
+import { AuthProvider } from '@/lib/auth-context'
 import './globals.css'
 
-const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  variable: '--font-geist-mono',
-})
-
 export const metadata: Metadata = {
-  title: 'MyCrew Control Center',
-  description:
-    'Gerencie modelos de IA locais (Ollama) e provedores externos via API na plataforma MyCrew.',
-}
-
-export const viewport: Viewport = {
-  colorScheme: 'dark',
-  themeColor: '#101526',
+  title: 'MyCrew',
+  description: 'Gerenciamento de modelos de IA',
 }
 
 export default function RootLayout({
@@ -25,9 +13,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
-      <body className="bg-background font-sans antialiased">
-        {children}
+    <html lang="pt-BR" className="dark">
+      <body className="min-h-screen bg-background font-sans antialiased">
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   )

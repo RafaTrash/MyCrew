@@ -9,16 +9,20 @@ import {
   Workflow,
   Activity,
   Cpu,
+  CheckSquare,
+  FolderKanban,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
-  { label: 'Visão Geral', icon: LayoutGrid, active: false },
+  { label: 'Dashboard', icon: LayoutGrid, active: false },
   { label: 'Models', icon: BrainCircuit, active: true },
   { label: 'Agents', icon: Bot, active: false },
   { label: 'Chat', icon: MessageSquare, active: false },
   { label: 'Knowledge', icon: Boxes, active: false },
-  { label: 'Fluxos n8n', icon: Workflow, active: false },
+  { label: 'Flows', icon: Workflow, active: false },
+  { label: 'Tasks', icon: CheckSquare, active: false },
+  { label: 'Projects', icon: FolderKanban, active: false },
   { label: 'Monitor', icon: Activity, active: false },
   { label: 'IOTs', icon: Cpu, active: false },
 ]

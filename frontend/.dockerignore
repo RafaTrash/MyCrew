@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build output
+.next
+out
+.build
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker files
+Dockerfile
+docker-compose.yml
+
+# Local environment files
+.env*.local
+.env
+
+# Logs and coverage
+*.log
+.nyc_output
+coverage
+.nyc*
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Temp files
+tmp
+temp
+*.tmp
+*.temp
+
+# v0 sandbox files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/

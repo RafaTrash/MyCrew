@@ -4,6 +4,7 @@ import { Activity, Cpu, Globe, KeyRound, Timer, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Model, Provider, UsageMetrics } from '@/lib/types'
 import { formatCompact, MiniBars, Sparkline } from './mini-charts'
+import { ProviderLogo, hasProviderLogo } from '@/lib/provider-logo'
 
 const STATUS_STYLES: Record<Model['status'], string> = {
   ready: 'bg-primary',
@@ -53,20 +54,24 @@ export function ProviderCard({ provider }: { provider: Provider }) {
       {/* Header */}
       <header className="flex items-center justify-between gap-2 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
-              isLocal
-                ? 'bg-primary/15 text-primary ring-primary/30'
-                : 'bg-chart-2/15 text-chart-2 ring-chart-2/30',
-            )}
-          >
-            {isLocal ? (
-              <Cpu className="size-4" aria-hidden="true" />
-            ) : (
-              <Globe className="size-4" aria-hidden="true" />
-            )}
-          </div>
+          {hasProviderLogo(provider.slug) ? (
+            <ProviderLogo slug={provider.slug} type={provider.type} className="size-8" />
+          ) : (
+            <div
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
+                isLocal
+                  ? 'bg-primary/15 text-primary ring-primary/30'
+                  : 'bg-chart-2/15 text-chart-2 ring-chart-2/30',
+              )}
+            >
+              {isLocal ? (
+                <Cpu className="size-4" aria-hidden="true" />
+              ) : (
+                <Globe className="size-4" aria-hidden="true" />
+              )}
+            </div>
+          )}
           <div className="min-w-0 leading-tight">
             <div className="flex items-center gap-1.5">
               <h3 className="truncate text-sm font-semibold text-card-foreground">

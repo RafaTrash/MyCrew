@@ -1,29 +1,35 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Server, X } from 'lucide-react'
+import { Loader2, Server, X, Wifi, WifiOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { CreateModelPayload, ProviderSummary } from '@/lib/types'
+import Image from 'next/image'
+import type { CreateModelPayload, Provider } from '@/lib/types'
+import { hasProviderLogo } from '@/lib/provider-logo'
 
 interface AddModelDialogProps {
   open: boolean
   onClose: () => void
   onSubmit: (payload: CreateModelPayload) => Promise<void>
+  token?: string | null
 }
 
-export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps) {
-  const [providers, setProviders] = useState<ProviderSummary[]>([])
+export function AddModelDialog({ open, onClose, onSubmit, token }: AddModelDialogProps) {
+  const [providers, setProviders] = useState<Provider[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [modelName, setModelName] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadingProviders, setLoadingProviders] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   useEffect(() => {
     if (open) {
       setSelectedProviderId('')
       setModelName('')
       setError(null)
+      setConnectionStatus('idle')
       loadProviders()
     }
   }, [open])
@@ -55,6 +61,40 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId)
 
+  async function handleTestConnection() {
+    if (!selectedProvider || !selectedProvider.slug) return
+    
+    // Only test connection for configured API providers
+    const providerInList = providers.find(p => p.id === selectedProviderId)
+    if (!providerInList || providerInList.type !== 'api' || !providerInList.hasApiKey) return
+
+    setTestingConnection(true)
+    setConnectionStatus('idle')
+    setError(null)
+
+    try {
+      const res = await fetch(`/api/providers/${selectedProvider.slug}/test-connection`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (res.ok) {
+        setConnectionStatus('success')
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setConnectionStatus('error')
+        setError(body.error || 'Falha ao testar conexão')
+      }
+    } catch (err) {
+      setConnectionStatus('error')
+      setError(err instanceof Error ? err.message : 'Erro de conexão')
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -68,11 +108,17 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
       return
     }
 
+    // Check if user has configured this provider (for API providers only)
+    // Local providers (like Ollama) don't require prior configuration
+    const providerInList = providers.find(p => p.id === selectedProviderId)
+    if (providerInList && providerInList.type === 'api' && !providerInList.hasApiKey) {
+      setError(`Configure o provedor '${providerInList.name}' antes de adicionar modelos.`)
+      return
+    }
+
     setSubmitting(true)
     try {
       await onSubmit({
-        type: 'api',
-        providerName: selectedProvider?.name || '',
         providerSlug: selectedProvider?.slug || '',
         modelName: modelName.trim(),
       })
@@ -83,6 +129,9 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
       setSubmitting(false)
     }
   }
+
+  // Show test button only for configured API providers
+  const showTestButton = selectedProvider?.type === 'api' && selectedProvider.hasApiKey
 
   return (
     <div
@@ -108,7 +157,7 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
               Adicionar modelo
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Adicione um modelo a um provedor de API externa já cadastrado.
+              Adicione um modelo a um provedor já configurado.
             </p>
           </div>
           <button
@@ -131,22 +180,39 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
               </div>
             ) : providers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                Nenhum provedor cadastrado. Cadastre um provedor primeiro.
+                Nenhum provedor disponível. Configure um provedor primeiro.
               </div>
             ) : (
-              <select
-                id="providerSelect"
-                value={selectedProviderId}
-                onChange={(e) => setSelectedProviderId(e.target.value)}
-                className={cn(inputClass, 'appearance-none')}
-              >
-                <option value="">Selecione um provedor...</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.hasApiKey ? '(chave configurada)' : '(sem chave)'}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                {selectedProvider && hasProviderLogo(selectedProvider.slug || '') && (
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Image
+                      src={`/providers/${selectedProvider.slug}.svg`}
+                      alt={`${selectedProvider.slug} logo`}
+                      width={16}
+                      height={16}
+                      className={cn('size-4', 'dark:brightness-0 dark:invert')}
+                    />
+                  </div>
+                )}
+                <select
+                  id="providerSelect"
+                  value={selectedProviderId}
+                  onChange={(e) => setSelectedProviderId(e.target.value)}
+                  className={cn(
+                    inputClass,
+                    'appearance-none',
+                    selectedProvider && hasProviderLogo(selectedProvider.slug || '') && 'pl-7'
+                  )}
+                >
+                  <option value="">Selecione um provedor...</option>
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.hasApiKey ? '(configurado)' : '(não configurado)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
           </Field>
 
@@ -176,6 +242,32 @@ export function AddModelDialog({ open, onClose, onSubmit }: AddModelDialogProps)
             >
               Cancelar
             </button>
+            {showTestButton && (
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testingConnection}
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60',
+                  connectionStatus === 'success'
+                    ? 'bg-success/20 text-success hover:bg-success/30'
+                    : connectionStatus === 'error'
+                    ? 'bg-destructive/20 text-destructive hover:bg-destructive/30'
+                    : 'border border-border bg-background text-foreground hover:bg-accent'
+                )}
+              >
+                {testingConnection ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : connectionStatus === 'success' ? (
+                  <Wifi className="size-4" />
+                ) : connectionStatus === 'error' ? (
+                  <WifiOff className="size-4" />
+                ) : (
+                  <Wifi className="size-4" />
+                )}
+                {testingConnection ? 'Testando...' : connectionStatus === 'success' ? 'Conectado' : 'Testar Conexão'}
+              </button>
+            )}
             <button
               type="submit"
               disabled={submitting || providers.length === 0}
