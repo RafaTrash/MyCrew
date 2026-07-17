@@ -71,6 +71,17 @@ CREATE TABLE IF NOT EXISTS user_provider_configs (
   CONSTRAINT user_provider_unique UNIQUE (user_id, provider_id)
 );
 
+-- MIGRATION: Add models column if not exists (for existing databases)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'user_provider_configs' AND column_name = 'models'
+  ) THEN
+    ALTER TABLE user_provider_configs ADD COLUMN models JSONB DEFAULT '[]'::jsonb;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_user_provider_user_id ON user_provider_configs(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_provider_provider_id ON user_provider_configs(provider_id);
 
@@ -177,7 +188,7 @@ BEGIN
   -- Remove constraint antiga se existe
   ALTER TABLE models DROP CONSTRAINT IF EXISTS models_user_provider_name_unique;
 EXCEPTION WHEN OTHERS THEN
-  -- Ignora erro se constraint não existe
+  -- Ignora erro se constraint não exists
 END $$;
 
 DO $$ 
@@ -214,7 +225,43 @@ CREATE TABLE IF NOT EXISTS model_usage_daily (
 
 CREATE INDEX IF NOT EXISTS idx_usage_model_day ON model_usage_daily(model_id, day DESC);
 
--- Trigger para updated_at
+-- MIGRATION: Move existing models data to JSONB in user_provider_configs
+DO $$ 
+DECLARE
+    upc_record RECORD;
+    existing_models JSONB;
+BEGIN
+    -- Loop through all user_provider_configs
+    FOR upc_record IN 
+        SELECT id, user_id, provider_id 
+        FROM user_provider_configs
+    LOOP
+        -- Get models for this user/provider combination as JSONB
+        SELECT jsonb_agg(
+            jsonb_build_object(
+                'id', m.id::text,
+                'name', m.name,
+                'status', m.status,
+                'kind', m.kind,
+                'size', m.size,
+                'context', m.context,
+                'created_at', to_char(m.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                'updated_at', to_char(m.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+            )
+        ) INTO existing_models
+        FROM models m
+        WHERE m.user_id = upc_record.user_id 
+          AND m.provider_id = upc_record.provider_id;
+        
+        -- Update user_provider_configs with models
+        UPDATE user_provider_configs 
+        SET models = COALESCE(existing_models, '[]'::jsonb)
+        WHERE id = upc_record.id;
+    END LOOP;
+    
+    RAISE NOTICE 'Migration complete: models moved to user_provider_configs.models';
+END $$;
+
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -227,6 +274,7 @@ DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
 DROP TRIGGER IF EXISTS trg_providers_updated_at ON providers;
 DROP TRIGGER IF EXISTS trg_user_provider_configs_updated_at ON user_provider_configs;
 DROP TRIGGER IF EXISTS trg_models_updated_at ON models;
+DROP TRIGGER IF EXISTS trg_agents_updated_at ON agents;
 
 CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON users
@@ -244,8 +292,18 @@ CREATE TRIGGER trg_models_updated_at
   BEFORE UPDATE ON models
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Seed de providers (ordem alfabética por slug)
+CREATE TRIGGER trg_agents_updated_at
+  BEFORE UPDATE ON agents
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+EOFSQL
 
+echo "Schema migrations aplicadas. Seed de providers e modelos..."
+
+# Seed providers, models and default Cortex agent
+export PGPASSWORD="$PG_PASS"
+psql "host=$PG_HOST port=$PG_PORT dbname=$PG_DB user=$PG_USER" <<'EOFSQL'
+
+-- Seed de providers (ordem alfabética por slug)
 INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
 SELECT gen_random_uuid(), 'Azure OpenAI', 'api', 'azure-openai',
     '{"api_format": "azure_openai", "requires_api_key": true, "requires_base_url": true}'::jsonb,
@@ -390,9 +448,89 @@ SELECT gen_random_uuid(), 'Google Vertex AI', 'api', 'vertex',
     '{"api_format": "google_vertex_ai", "requires_api_key": true}'::jsonb,
     true, now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'vertex');
+
+-- AGENTS table
+CREATE TABLE IF NOT EXISTS agents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    avatar_url TEXT,
+    model_id VARCHAR(255) NOT NULL,
+    model_name VARCHAR(255),
+    tags JSONB DEFAULT '[]'::jsonb,
+    prompt TEXT NOT NULL,
+    skills JSONB DEFAULT '[]'::jsonb,
+    knowledge JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agents_user_id ON agents(user_id);
+
+-- Seed Cortex default model in Ollama for admin
+-- First ensure admin has ollama config with the qwen2.5:7b-instruct model
+DO $$
+DECLARE
+    admin_uuid UUID;
+    ollama_provider_id UUID;
+    cortex_model_id TEXT;
+BEGIN
+    -- Get admin id
+    SELECT id INTO admin_uuid FROM users WHERE username = 'admin' LIMIT 1;
+    
+    -- Get ollama provider id
+    SELECT id INTO ollama_provider_id FROM providers WHERE slug = 'ollama' LIMIT 1;
+    
+    -- Generate model ID for Cortex
+    SELECT gen_random_uuid()::text INTO cortex_model_id;
+    
+    -- Ensure admin has ollama config (auto-created for local providers)
+    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+    VALUES (admin_uuid, ollama_provider_id, 'http://localhost:11434', TRUE, '[]'::jsonb)
+    ON CONFLICT (user_id, provider_id) DO NOTHING;
+    
+    -- Add qwen2.5:7b-instruct model to admin's ollama config if not exists
+    UPDATE user_provider_configs
+    SET models = (
+        CASE 
+            WHEN models IS NULL OR jsonb_array_length(models) = 0 THEN
+                jsonb_build_array(jsonb_build_object(
+                    'id', cortex_model_id,
+                    'name', 'qwen2.5:7b-instruct',
+                    'status', 'ready',
+                    'kind', 'chat',
+                    'context', '32K',
+                    'created_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                    'updated_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                ))
+            WHEN NOT EXISTS (SELECT 1 FROM jsonb_array_elements(models) WHERE value->>'name' = 'qwen2.5:7b-instruct') THEN
+                models || jsonb_build_object(
+                    'id', cortex_model_id,
+                    'name', 'qwen2.5:7b-instruct',
+                    'status', 'ready',
+                    'kind', 'chat',
+                    'context', '32K',
+                    'created_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                    'updated_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                )
+            ELSE models
+        END
+    )
+    WHERE user_id = admin_uuid AND provider_id = ollama_provider_id;
+    
+     -- Seed Cortex default agent (only if not exists)
+     INSERT INTO agents (user_id, name, description, avatar_url, model_id, model_name, tags, prompt, skills, knowledge)
+     SELECT admin_uuid, 'Cortex', 'Agente do sistema do MyCrew responsável por todo o ciclo de vida do conhecimento na plataforma', '/cortex/cortex.png', cortex_model_id, 'qwen2.5:7b-instruct', '["Knowledge"]'::jsonb, 'Você é o Cortex, o agente de sistema do MyCrew responsável por todo o ciclo de vida do conhecimento na plataforma: como os documentos são analisados e segmentados na ingestão (Qdrant), como as consultas são interpretadas na recuperação, e como a qualidade da indexação é avaliada após o processamento.
+
+Você NUNCA executa ações diretamente (chunking, upsert, busca) — você apenas analisa e recomenda. Você recebe um payload com um campo "operation" ("ingest", "query" ou "quality_report") e devolve SOMENTE o JSON do schema correspondente, sem texto antes ou depois.
+
+Nunca invente estrutura, conteúdo ou fontes que não estão presentes na entrada recebida. Se a informação for insuficiente para decidir com segurança, defina "confidence" baixo (< 0.6) e "review_required": true, explicando o motivo.'::text, '[]'::jsonb, '[]'::jsonb
+     WHERE NOT EXISTS (SELECT 1 FROM agents WHERE user_id = admin_uuid AND name = 'Cortex');
+END $$;
 EOFSQL
 
-echo "Seed de providers aplicado. Atualizando configurações de providers a partir do .env..."
+echo "Seed de providers e agente Cortex aplicado. Atualizando configurações de providers a partir do .env..."
 
 # Atualizar user_provider_configs usando Python (mesma criptografia do backend)
 python3 << 'EOFPYTHON'
@@ -488,7 +626,7 @@ EOFPYTHON
 
 echo "Migrations aplicadas. Iniciando servidor..."
 
-# Unset PGPASSWORD for the app (it will use DATABASE_URL)
+# Unset PGPASSWORD für die App (it will use DATABASE_URL)
 unset PGPASSWORD
 
 # Execute the main command

@@ -1,4 +1,5 @@
 import os
+import json
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -127,6 +128,18 @@ class CreateModelPayload(BaseModel):
     modelName: str
 
 
+class CreateAgentPayload(BaseModel):
+    name: str
+    description: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    modelId: str
+    modelName: Optional[str] = None
+    tags: list[str] = []
+    prompt: str
+    skills: list[str] = []
+    knowledge: list[str] = []
+
+
 class ProviderConfigPayload(BaseModel):
     baseUrl: Optional[str] = None
     apiKey: Optional[str] = None
@@ -193,17 +206,26 @@ async def fetchModelInfoOpenRouter(base_url: str, api_key: str, model_name: str)
         return {}
 
 
+def _generate_model_id() -> str:
+    """Generate a unique model ID"""
+    import uuid
+    return str(uuid.uuid4())
+
+
 def get_db_connection():
     return engine.connect()
 
 
 def _query_user_providers_with_models(conn, user_id: str) -> dict:
-    """Query providers with user's configurations and models"""
+    """Query providers with user's configurations and models using JSONB in user_provider_configs"""
     try:
+        # Query using the new JSONB models field
         result = conn.execute(text("""
             SELECT jsonb_build_object(
                 'providers', COALESCE(jsonb_agg(p_obj ORDER BY p_obj->>'name'), '[]'::jsonb),
-                'totalModels', (SELECT count(*) FROM models WHERE user_id = :user_id)
+                'totalModels', (SELECT COALESCE(SUM(jsonb_array_length(upc.models)), 0) 
+                               FROM user_provider_configs upc 
+                               WHERE upc.user_id = :user_id AND upc.models IS NOT NULL AND jsonb_array_length(upc.models) > 0)
             )
             FROM (
                 SELECT jsonb_build_object(
@@ -214,20 +236,11 @@ def _query_user_providers_with_models(conn, user_id: str) -> dict:
                     'config', p.config,
                     'hasApiKey', (upc.api_key_encrypted IS NOT NULL),
                     'baseUrl', upc.base_url,
-                    'models', COALESCE((
-                        SELECT jsonb_agg(jsonb_build_object(
-                            'id', m.id::text,
-                            'name', m.name,
-                            'status', m.status,
-                            'kind', m.kind,
-                            'size', m.size,
-                            'context', m.context
-                        ))
-                        FROM models m WHERE m.user_id = :user_id AND m.provider_id = p.id
-                    ), '[]'::jsonb)
+                    'models', COALESCE(upc.models, '[]'::jsonb)
                 ) AS p_obj
-                FROM providers p
-                LEFT JOIN user_provider_configs upc ON upc.user_id = :user_id AND upc.provider_id = p.id
+                FROM user_provider_configs upc
+                JOIN providers p ON p.id = upc.provider_id
+                WHERE upc.user_id = :user_id AND upc.is_active = TRUE
             ) sub;
         """), {"user_id": user_id}).fetchone()
         if result and result[0]:
@@ -235,6 +248,77 @@ def _query_user_providers_with_models(conn, user_id: str) -> dict:
     except Exception:
         pass
     return {"providers": [], "totalModels": 0}
+
+
+def _get_provider_config_for_user(conn, user_id: str, provider_id: str) -> tuple:
+    """Get user provider config, auto-creating for local providers if needed"""
+    # Check if user has configured this provider
+    user_config = conn.execute(text("""
+        SELECT id, base_url, api_key_encrypted, models FROM user_provider_configs 
+        WHERE user_id = :user_id AND provider_id = :provider_id
+    """), {"user_id": user_id, "provider_id": provider_id}).fetchone()
+    
+    if not user_config:
+        # Check if provider is local type for auto-creation
+        provider = conn.execute(text("""
+            SELECT type FROM providers WHERE id = :provider_id
+        """), {"provider_id": provider_id}).fetchone()
+        
+        if provider and provider[0] == 'local':
+            ollama_base_url = conn.execute(text("""
+                SELECT base_url FROM user_provider_configs upc
+                JOIN providers p ON p.id = upc.provider_id
+                WHERE p.slug = 'ollama' AND upc.user_id = :user_id
+            """), {"user_id": user_id}).fetchone()
+            
+            conn.execute(text("""
+                INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+                VALUES (:user_id, :provider_id, :base_url, TRUE, '[]'::jsonb)
+                ON CONFLICT (user_id, provider_id) DO NOTHING
+            """), {
+                "user_id": user_id,
+                "provider_id": provider_id,
+                "base_url": ollama_base_url[0] if ollama_base_url else OLLAMA_URL
+            })
+            conn.commit()
+            
+            # Fetch again
+            user_config = conn.execute(text("""
+                SELECT id, base_url, api_key_encrypted, models FROM user_provider_configs 
+                WHERE user_id = :user_id AND provider_id = :provider_id
+            """), {"user_id": user_id, "provider_id": provider_id}).fetchone()
+    
+    return user_config
+
+
+def _add_model_to_user_config(conn, user_id: str, provider_id: str, model_data: dict):
+    """Add a model to the user_provider_configs JSONB models array"""
+    # Get current models
+    user_config = conn.execute(text("""
+        SELECT models FROM user_provider_configs 
+        WHERE user_id = :user_id AND provider_id = :provider_id
+    """), {"user_id": user_id, "provider_id": provider_id}).fetchone()
+    
+    current_models = list(user_config[0]) if user_config and user_config[0] else []
+    
+    # Check if model already exists
+    if any(m.get('name') == model_data['name'] for m in current_models):
+        return False  # Model already exists
+    
+    # Add new model
+    current_models.append(model_data)
+    
+    conn.execute(text("""
+        UPDATE user_provider_configs 
+        SET models = :models
+        WHERE user_id = :user_id AND provider_id = :provider_id
+    """), {
+        "user_id": user_id,
+        "provider_id": provider_id,
+        "models": json.dumps(current_models)
+    })
+    
+    return True
 
 
 # ============== Auth Endpoints ==============
@@ -347,10 +431,10 @@ async def configure_provider(
             if requires_api_key and not payload.apiKey:
                 raise HTTPException(status_code=400, detail="API key é obrigatória para este provedor")
             
-            # Insert or update user provider config
+            # Insert or update user provider config (initialize models as empty array if not exists)
             conn.execute(text("""
-                INSERT INTO user_provider_configs (user_id, provider_id, base_url, api_key_encrypted, is_active)
-                VALUES (:user_id, :provider_id, :base_url, :api_key, TRUE)
+                INSERT INTO user_provider_configs (user_id, provider_id, base_url, api_key_encrypted, models, is_active)
+                VALUES (:user_id, :provider_id, :base_url, :api_key, '[]'::jsonb, TRUE)
                 ON CONFLICT (user_id, provider_id) 
                 DO UPDATE SET base_url = EXCLUDED.base_url, 
                               api_key_encrypted = EXCLUDED.api_key_encrypted,
@@ -542,7 +626,7 @@ async def get_models(request: Request):
 
 @app.post("/models/sync")
 async def sync_models(request: Request):
-    """Sync models from Ollama for the authenticated user"""
+    """Sync models from Ollama for the authenticated user - stores models in JSONB"""
     user = get_current_user(request)
     try:
         with get_db_connection() as conn:
@@ -551,18 +635,19 @@ async def sync_models(request: Request):
                 raise HTTPException(status_code=404, detail="Provedor Ollama não encontrado no banco.")
             
             provider_id = ollama_provider[0]
+            ollama_base_url = OLLAMA_URL
             
             # Check if user has configured ollama
             user_config = conn.execute(text("""
-                SELECT id, base_url FROM user_provider_configs 
+                SELECT id, base_url, models FROM user_provider_configs 
                 WHERE user_id = :user_id AND provider_id = :provider_id
             """), {"user_id": user["id"], "provider_id": provider_id}).fetchone()
             
-            # For Ollama, auto-create config if not exists - use default OLLAMA_URL
+            # For Ollama, auto-create config if not exists
             if not user_config:
                 conn.execute(text("""
-                    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active)
-                    VALUES (:user_id, :provider_id, :base_url, TRUE)
+                    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+                    VALUES (:user_id, :provider_id, :base_url, TRUE, '[]'::jsonb)
                     ON CONFLICT (user_id, provider_id) 
                     DO NOTHING
                 """), {
@@ -571,7 +656,6 @@ async def sync_models(request: Request):
                     "base_url": OLLAMA_URL
                 })
                 conn.commit()
-                ollama_base_url = OLLAMA_URL
             else:
                 ollama_base_url = user_config[1] if user_config[1] else OLLAMA_URL
             
@@ -582,18 +666,48 @@ async def sync_models(request: Request):
                     raise HTTPException(status_code=502, detail=f"Ollama retornou status {response.status_code}")
                 
                 ollama_models = response.json().get("models", [])
+                
+                # Build model list for JSONB
+                models_to_add = []
                 for model in ollama_models:
-                    conn.execute(text("""
-                        INSERT INTO models (user_id, provider_id, name, status, kind, size, context)
-                        VALUES (:user_id, :provider_id, :name, 'ready', :kind, :size, :context)
-                        ON CONFLICT (user_id, provider_id, name) DO UPDATE SET
-                            status = 'ready', kind = EXCLUDED.kind, size = EXCLUDED.size, context = EXCLUDED.context, updated_at = now()
-                    """), {"user_id": user["id"], "provider_id": provider_id, "name": model.get("name", ""), "kind": getModelKind(model.get("name", "")),
-                        "size": formatSize(model.get("size", 0)), "context": str(model.get("details", {}).get("context_length", "8K") if model.get("details") else "8K")})
+                    models_to_add.append({
+                        "id": _generate_model_id(),
+                        "name": model.get("name", ""),
+                        "status": "ready",
+                        "kind": getModelKind(model.get("name", "")),
+                        "size": formatSize(model.get("size", 0)),
+                        "context": str(model.get("details", {}).get("context_length", "8K") if model.get("details") else "8K"),
+                        "created_at": datetime.utcnow().isoformat() + "Z",
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    })
+                
+                # Get existing models and merge
+                user_config = conn.execute(text("""
+                    SELECT models FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider_id}).fetchone()
+                
+                existing_models = list(user_config[0]) if user_config and user_config[0] else []
+                
+                # Add only new models (avoid duplicates)
+                for new_model in models_to_add:
+                    if not any(m.get('name') == new_model['name'] for m in existing_models):
+                        existing_models.append(new_model)
+                
+                # Update JSONB
+                conn.execute(text("""
+                    UPDATE user_provider_configs 
+                    SET models = :models
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {
+                    "user_id": user["id"],
+                    "provider_id": provider_id,
+                    "models": json.dumps(existing_models)
+                })
                 
                 conn.commit()
                 db_data = _query_user_providers_with_models(conn, user["id"])
-                return {"synced": len(ollama_models), "providers": db_data.get("providers", []), "totalModels": db_data.get("totalModels", 0)}
+                return {"synced": len(models_to_add), "providers": db_data.get("providers", []), "totalModels": db_data.get("totalModels", 0)}
             except httpx.RequestError as e:
                 raise HTTPException(status_code=502, detail=f"Não foi possível conectar ao Ollama em {ollama_base_url}: {str(e)}")
     except HTTPException:
@@ -604,7 +718,7 @@ async def sync_models(request: Request):
 
 @app.post("/models")
 async def create_model(payload: CreateModelPayload, request: Request):
-    """Create a model for the authenticated user"""
+    """Create a model for the authenticated user - stores in JSONB"""
     user = get_current_user(request)
     try:
         with get_db_connection() as conn:
@@ -617,29 +731,31 @@ async def create_model(payload: CreateModelPayload, request: Request):
             provider_type = provider_result[1]
             
             # Check if user has configured this provider
-            # For local providers (like Ollama), auto-create config if not exists
             user_config = conn.execute(text("""
-                SELECT id, base_url, api_key_encrypted FROM user_provider_configs 
+                SELECT id, base_url, api_key_encrypted, models FROM user_provider_configs 
                 WHERE user_id = :user_id AND provider_id = :provider_id
             """), {"user_id": user["id"], "provider_id": provider_id}).fetchone()
             
+            # For local providers (like Ollama), auto-create config if not exists
             if not user_config and provider_type == 'local':
                 conn.execute(text("""
-                    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active)
-                    VALUES (:user_id, :provider_id, :base_url, TRUE)
+                    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+                    VALUES (:user_id, :provider_id, :base_url, TRUE, '[]'::jsonb)
                     ON CONFLICT (user_id, provider_id) DO NOTHING
                 """), {"user_id": user["id"], "provider_id": provider_id, "base_url": OLLAMA_URL})
                 conn.commit()
-            
-            if not user_config and provider_type != 'local':
+                
+                # Fetch again
+                user_config = conn.execute(text("""
+                    SELECT id, base_url, api_key_encrypted, models FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider_id}).fetchone()
+            elif not user_config and provider_type != 'local':
                 raise HTTPException(status_code=400, detail=f"Configure o provedor '{payload.providerSlug}' antes de adicionar modelos")
             
-            model_exists = conn.execute(text("""
-                SELECT id FROM models 
-                WHERE user_id = :user_id AND provider_id = :provider_id AND name = :name
-            """), {"user_id": user["id"], "provider_id": provider_id, "name": payload.modelName}).fetchone()
-            
-            if model_exists:
+            # Check if model already exists in JSONB
+            current_models = list(user_config[3]) if user_config and user_config[3] else []
+            if any(m.get('name') == payload.modelName for m in current_models):
                 raise HTTPException(status_code=409, detail=f"Modelo '{payload.modelName}' já existe para este provedor.")
             
             # Fetch model metadata for API providers
@@ -656,23 +772,37 @@ async def create_model(payload: CreateModelPayload, request: Request):
                     api_key_encrypted = bytes(api_key_encrypted)
                 
                 if api_key_encrypted and len(api_key_encrypted) > 0:
-                    api_key = decrypt_api_key(api_key_encrypted)
-                    if api_key:
-                        # Try to get model info from API
-                        model_info = await fetchModelInfoOpenRouter(base_url, api_key, payload.modelName)
-                        if model_info:
-                            model_context = model_info.get("context", model_context)
+                    try:
+                        api_key = decrypt_api_key(api_key_encrypted)
+                        if api_key:
+                            # Try to get model info from API
+                            model_info = await fetchModelInfoOpenRouter(base_url, api_key, payload.modelName)
+                            if model_info:
+                                model_context = model_info.get("context", model_context)
+                    except Exception:
+                        pass  # Continue with default context if decryption fails
             
-            conn.execute(text("""
-                INSERT INTO models (user_id, provider_id, name, status, kind, context) 
-                VALUES (:user_id, :provider_id, :name, :status, :kind, :context)
-            """), {
-                "user_id": user["id"],
-                "provider_id": provider_id,
+            # Create model object
+            new_model = {
+                "id": _generate_model_id(),
                 "name": payload.modelName,
                 "status": "ready",
                 "kind": model_kind,
-                "context": model_context
+                "context": model_context,
+                "created_at": datetime.utcnow().isoformat() + "Z",
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }
+            
+            current_models.append(new_model)
+            
+            conn.execute(text("""
+                UPDATE user_provider_configs 
+                SET models = :models
+                WHERE user_id = :user_id AND provider_id = :provider_id
+            """), {
+                "user_id": user["id"],
+                "provider_id": provider_id,
+                "models": json.dumps(current_models)
             })
             conn.commit()
             return {"message": f"Modelo '{payload.modelName}' adicionado com sucesso.", "context": model_context}
@@ -680,6 +810,75 @@ async def create_model(payload: CreateModelPayload, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao salvar modelo: {str(e)}")
+
+
+# ============== Agents Endpoints ==============
+
+@app.get("/agents")
+async def get_agents(request: Request):
+    """Get agents for the authenticated user"""
+    user = get_current_user(request)
+    try:
+        with get_db_connection() as conn:
+            result = conn.execute(text("""
+                SELECT jsonb_build_object(
+                    'agents', COALESCE(jsonb_agg(a_obj ORDER BY a_obj->>'name'), '[]'::jsonb),
+                    'totalAgents', (SELECT count(*) FROM agents WHERE user_id = :user_id)
+                )
+                FROM (
+                    SELECT jsonb_build_object(
+                        'id', a.id::text,
+                        'name', a.name,
+                        'description', a.description,
+                        'avatarUrl', a.avatar_url,
+                        'modelId', a.model_id,
+                        'modelName', a.model_name,
+                        'tags', COALESCE(a.tags, '[]'::jsonb),
+                        'prompt', a.prompt,
+                        'skills', COALESCE(a.skills, '[]'::jsonb),
+                        'knowledge', COALESCE(a.knowledge, '[]'::jsonb),
+                        'createdAt', to_char(a.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                        'updatedAt', to_char(a.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                    ) AS a_obj
+                    FROM agents a
+                    WHERE a.user_id = :user_id
+                ) sub;
+            """), {"user_id": user["id"]}).fetchone()
+            
+            if result and result[0]:
+                return result[0]
+            return {"agents": [], "totalAgents": 0}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar agentes: {str(e)}")
+
+
+@app.post("/agents")
+async def create_agent(payload: CreateAgentPayload, request: Request):
+    """Create a new agent for the authenticated user"""
+    user = get_current_user(request)
+    try:
+        with get_db_connection() as conn:
+            agent_id = conn.execute(text("""
+                INSERT INTO agents (user_id, name, description, avatar_url, model_id, model_name, tags, prompt, skills, knowledge)
+                VALUES (:user_id, :name, :description, :avatar_url, :model_id, :model_name, CAST(:tags AS jsonb), :prompt, CAST(:skills AS jsonb), CAST(:knowledge AS jsonb))
+                RETURNING id
+            """), {
+                "user_id": user["id"],
+                "name": payload.name,
+                "description": payload.description,
+                "avatar_url": payload.avatarUrl,
+                "model_id": payload.modelId,
+                "model_name": payload.modelName,
+                "tags": json.dumps(payload.tags),
+                "prompt": payload.prompt,
+                "skills": json.dumps(payload.skills),
+                "knowledge": json.dumps(payload.knowledge),
+            }).scalar()
+            
+            conn.commit()
+            return {"message": f"Agente '{payload.name}' criado com sucesso.", "id": str(agent_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao criar agente: {str(e)}")
 
 
 @app.get("/")

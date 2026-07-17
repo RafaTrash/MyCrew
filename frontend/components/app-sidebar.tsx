@@ -1,5 +1,7 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import {
   Bot,
   BrainCircuit,
@@ -11,23 +13,31 @@ import {
   Cpu,
   CheckSquare,
   FolderKanban,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', icon: LayoutGrid, active: false },
-  { label: 'Models', icon: BrainCircuit, active: true },
-  { label: 'Agents', icon: Bot, active: false },
-  { label: 'Chat', icon: MessageSquare, active: false },
-  { label: 'Knowledge', icon: Boxes, active: false },
-  { label: 'Flows', icon: Workflow, active: false },
-  { label: 'Tasks', icon: CheckSquare, active: false },
-  { label: 'Projects', icon: FolderKanban, active: false },
-  { label: 'Monitor', icon: Activity, active: false },
-  { label: 'IOTs', icon: Cpu, active: false },
+  { label: 'Dashboard', icon: LayoutGrid, href: '/dashboard' },
+  { label: 'Models', icon: BrainCircuit, href: '/models' },
+  { label: 'Agents', icon: Bot, href: '/agents' },
+  { label: 'Chat', icon: MessageSquare, href: '#' },
+  { label: 'Knowledge', icon: Boxes, href: '/knowledge' },
+  { label: 'Flows', icon: Workflow, href: '#' },
+  { label: 'Tasks', icon: CheckSquare, href: '#' },
+  { label: 'Projects', icon: FolderKanban, href: '#' },
+  { label: 'Monitor', icon: Activity, href: '#' },
+  { label: 'IOTs', icon: Cpu, href: '#' },
 ]
 
 export function AppSidebar() {
+  const pathname = usePathname()
+  const { user, logout } = useAuth()
+  
+  const initials = user?.username?.charAt(0).toUpperCase() ?? '?'
+  const roleLabel = user?.role === 'admin' ? 'Administrador' : 'Usuário'
+  
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Brand */}
@@ -51,21 +61,22 @@ export function AppSidebar() {
       <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
+          const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
           return (
-            <a
+            <Link
               key={item.label}
-              href="#"
-              aria-current={item.active ? 'page' : undefined}
+              href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                item.active
+                isActive
                   ? 'bg-sidebar-accent text-sidebar-foreground ring-1 ring-primary/30'
                   : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
               )}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
               {item.label}
-            </a>
+            </Link>
           )
         })}
       </nav>
@@ -89,14 +100,21 @@ export function AppSidebar() {
       {/* User */}
       <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-3">
         <div className="flex size-8 items-center justify-center rounded-full bg-chart-2/20 text-xs font-semibold text-chart-2">
-          R
+          {initials}
         </div>
-        <div className="leading-tight">
-          <p className="text-sm font-medium text-sidebar-foreground">
-            Rafael R.
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-sidebar-foreground truncate">
+            {user?.username ?? 'Usuário'}
           </p>
-          <p className="text-[11px] text-muted-foreground">Administrador</p>
+          <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
         </div>
+        <button
+          onClick={logout}
+          title="Sair"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <LogOut className="size-4" aria-hidden="true" />
+        </button>
       </div>
     </aside>
   )

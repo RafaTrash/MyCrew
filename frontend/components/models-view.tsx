@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import useSWR from 'swr'
-import { Activity, Boxes, Plus, RefreshCw, Loader2, Server, Timer, Zap, Lock } from 'lucide-react'
+import { Activity, Boxes, Plus, RefreshCw, Loader2, Server, Timer, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CreateModelPayload, Provider } from '@/lib/types'
 import { ProviderCard } from './provider-card'
@@ -51,13 +51,20 @@ function computeSummary(providers: Provider[]) {
 }
 
 export function ModelsView() {
-  const { user, token, logout } = useAuth()
+  const { user, token } = useAuth()
   
-  const { data, isLoading, isValidating, mutate } = useSWR<ModelsResponse>(
+  const { data, isLoading, isValidating, mutate, error } = useSWR<ModelsResponse>(
     token ? ['/api/models'] : null,
     (url: string) => fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then((r) => r.json()),
+    }).then((r) => {
+      if (r.status === 401) {
+        // Token expired or invalid, redirect to login
+        window.location.href = '/login'
+        throw new Error('Unauthorized')
+      }
+      return r.json()
+    }),
     { revalidateOnFocus: false }
   )
   
@@ -153,18 +160,6 @@ export function ModelsView() {
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {totalModels}
             </span>
-            {user && (
-              <span className="flex items-center gap-1 rounded-full bg-secondary/50 px-2 py-0.5 text-xs text-muted-foreground">
-                <Lock className="size-3" />
-                {user.username}
-              </span>
-            )}
-            <button
-              onClick={logout}
-              className="rounded-full bg-secondary/50 px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              Sair
-            </button>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Modelos locais (Ollama) e provedores externos via API. Configure os provedores antes de adicionar modelos.
@@ -239,7 +234,41 @@ export function ModelsView() {
             value={formatCompact(summary.tokens)}
             hint="processados no período"
           />
-          <div className="rounded-xl border border-border bg-card p-4 lg:col-span-4">
+        </div>
+      )}
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Carregando modelos...
+        </div>
+      ) : providers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            Nenhum provedor configurado ainda. Configure um provedor para começar.
+          </p>
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => setConfigureDialogOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
+            >
+              <Plus className="size-4" />
+              Configurar provedor
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {providers.map((provider) => (
+              <ProviderCard key={provider.id} provider={provider} />
+            ))}
+          </div>
+
+          {/* Consultas por provedor - moved to end of page */}
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center gap-2">
               <Boxes className="size-4 text-muted-foreground" aria-hidden="true" />
               <h3 className="text-sm font-medium text-foreground">
@@ -270,37 +299,7 @@ export function ModelsView() {
               ))}
             </ul>
           </div>
-        </div>
-      )}
-
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Carregando modelos...
-        </div>
-      ) : providers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-16 text-center">
-          <p className="text-sm text-muted-foreground">
-            Nenhum provedor configurado ainda. Configure um provedor para começar.
-          </p>
-          <div className="mt-3 flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => setConfigureDialogOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
-            >
-              <Plus className="size-4" />
-              Configurar provedor
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {providers.map((provider) => (
-            <ProviderCard key={provider.id} provider={provider} />
-          ))}
-        </div>
+        </>
       )}
 
       <AddModelDialog

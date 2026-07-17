@@ -14,7 +14,23 @@ interface ConfigureProviderDialogProps {
   onSubmit: (slug: string, payload: ProviderConfigPayload) => Promise<void>
 }
 
+// Hook to fetch all provider templates
+function useAllProviders() {
+  const [allProviders, setAllProviders] = useState<Provider[]>([])
+  
+  useEffect(() => {
+    fetch('/api/providers')
+      .then(r => r.json())
+      .then(data => setAllProviders(data.providers || []))
+      .catch(() => setAllProviders([]))
+  }, [])
+  
+  return allProviders
+}
+
 export function ConfigureProviderDialog({ open, providers, onClose, onSubmit }: ConfigureProviderDialogProps) {
+  // Get ALL provider templates (not just configured ones)
+  const allTemplates = useAllProviders()
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -134,7 +150,7 @@ export function ConfigureProviderDialog({ open, providers, onClose, onSubmit }: 
                 id="providerSelect"
                 value={selectedProvider?.id || ''}
                 onChange={(e) => {
-                  const provider = providers.find(p => p.id === e.target.value)
+                  const provider = allTemplates.find(p => p.id === e.target.value)
                   setSelectedProvider(provider || null)
                 }}
                 className={cn(
@@ -145,9 +161,9 @@ export function ConfigureProviderDialog({ open, providers, onClose, onSubmit }: 
                 disabled={submitting}
               >
                 <option value="">Selecione um provedor...</option>
-                {providers.map((p) => (
+                {allTemplates.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} {p.hasApiKey ? '(configurado)' : '(não configurado)'}
+                    {p.name}
                   </option>
                 ))}
               </select>
