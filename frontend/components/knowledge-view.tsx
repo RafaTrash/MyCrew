@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Plus, FileText, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Knowledge } from '@/lib/types'
-import { AddKnowledgeDialog } from './add-knowledge-dialog'
+import { KnowledgeFlowDialog } from './knowledge-flow-dialog'
 import { useAuth } from '@/lib/auth-context'
 
 interface KnowledgeResponse {
@@ -49,36 +49,6 @@ export function KnowledgeView() {
 
   if (!user && !isLoading) {
     return null
-  }
-
-  async function handleSubmitKnowledge(payload: {
-    name: string
-    description?: string
-    file: File
-    tags?: string[]
-  }) {
-    // Mock implementation - apenas para demonstração
-    // Na versão completa, enviaria para a API
-    if (!token) {
-      throw new Error('Usuário não autenticado')
-    }
-    
-    // Simular upload
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    const newKnowledge: Knowledge = {
-      id: Date.now().toString(),
-      name: payload.name,
-      description: payload.description,
-      fileName: payload.file.name,
-      fileType: payload.file.name.substring(payload.file.name.lastIndexOf('.')).toLowerCase(),
-      fileSize: payload.file.size,
-      tags: payload.tags || [],
-      createdAt: new Date().toISOString(),
-    }
-    
-    setKnowledge(prev => [...prev, newKnowledge])
-    setTotalKnowledge(prev => prev + 1)
   }
 
   return (
@@ -139,10 +109,10 @@ export function KnowledgeView() {
         </div>
       )}
 
-      <AddKnowledgeDialog
+      <KnowledgeFlowDialog
         open={knowledgeDialogOpen}
         onClose={() => setKnowledgeDialogOpen(false)}
-        onSubmit={handleSubmitKnowledge}
+        token={token}
       />
     </div>
   )

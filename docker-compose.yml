@@ -25,7 +25,9 @@ services:
   # =====================================================================
 
   ollama:
-    image: ollama/ollama:latest
+    build:
+      context: ./ollama
+      dockerfile: Dockerfile
     container_name: mycrew-ollama
     restart: unless-stopped
     profiles: ["core"]
@@ -33,6 +35,8 @@ services:
       - "${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
     networks:
       - ai_net
     logging: *default-logging
@@ -45,11 +49,11 @@ services:
     #           count: all
     #           capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
 
   qdrant:
     image: qdrant/qdrant:v1.13.4

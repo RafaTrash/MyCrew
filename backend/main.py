@@ -1,10 +1,13 @@
 import os
 import json
+import asyncio
+import uuid
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Form, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import create_engine, text
+from cortex.flow import KnowledgeFlow
 from cryptography.fernet import Fernet
 import bcrypt
 from datetime import datetime, timedelta
@@ -889,3 +892,123 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+# ============== Knowledge Endpoints ==============
+
+# In-memory flow storage for SSE (em produção, usar Redis)
+knowledge_flows: dict[str, KnowledgeFlow] = {}
+
+@app.post("/knowledge/ingest")
+async def knowledge_ingest(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    file: UploadFile = File(...),
+    tags: str = Form(default=""),
+):
+    """Inicia o fluxo de ingestão de conhecimento"""
+    user = get_current_user(request)
+    
+    # Gera flow_id
+    flow_id = str(uuid.uuid4())
+    
+    # Lê conteúdo do arquivo
+    file_content = await file.read()
+    
+    # Cria flow manager
+    flow = KnowledgeFlow(flow_id, user["id"], file_content, file.filename or "unknown")
+    knowledge_flows[flow_id] = flow
+    
+    # Processa em background (SSE precisa ser streaming)
+    # Por enquanto, processa síncrono para devolver recommendation
+    try:
+        recommendation = await flow.analyze_document()
+        
+        # Persiste documento no Postgres (status: pending)
+        with get_db_connection() as conn:
+            doc_id = conn.execute(text("""
+                INSERT INTO knowledge_document (filename, file_type, language, structure_level, domain, raw_analysis)
+                VALUES (:filename, :file_type, :language, :structure_level, :domain, :raw_analysis)
+                RETURNING id
+            """), {
+                "filename": name,
+                "file_type": file.filename.split('.')[-1].lower() if '.' in file.filename else 'other',
+                "language": recommendation.document.language,
+                "structure_level": recommendation.document.structure_level,
+                "domain": recommendation.document.domain,
+                "raw_analysis": json.dumps(recommendation.model_dump())
+            }).scalar()
+            
+            conn.execute(text("""
+                INSERT INTO knowledge_flow (flow_id, document_id, user_id, status)
+                VALUES (:flow_id, :document_id, :user_id, 'awaiting_confirmation')
+            """), {
+                "flow_id": flow_id,
+                "document_id": str(doc_id),
+                "user_id": user["id"]
+            })
+            conn.commit()
+        
+        return {"flow_id": flow_id}
+    except Exception as e:
+        # Emite erro via SSE
+        await flow.emit_step('analyze', 'Analisando com Cortex', 'error', error_message=str(e))
+        raise HTTPException(status_code=500, detail=f"Erro na análise: {str(e)}")
+
+
+@app.get("/knowledge/stream")
+async def knowledge_stream(request: Request, flow_id: str):
+    """Endpoint SSE para streaming de eventos do Knowledge Flow"""
+    from fastapi.responses import StreamingResponse
+    
+    async def event_generator():
+        flow = knowledge_flows.get(flow_id)
+        if not flow:
+            yield f"data: {json.dumps({'error': 'Flow not found'})}\n\n"
+            return
+        
+        # Cria queue para eventos
+        events_queue = []
+        
+        async def subscribe(event_json: str):
+            events_queue.append(event_json)
+        
+        flow._subscribers.append(subscribe)
+        
+        try:
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+                    
+                if events_queue:
+                    yield f"data: {events_queue.pop(0)}\n\n"
+                else:
+                    await asyncio.sleep(0.1)
+        finally:
+            flow._subscribers.remove(subscribe)
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/knowledge/confirm")
+async def knowledge_confirm(
+    payload: dict,
+    request: Request
+):
+    """Confirma e inicia a indexação do documento"""
+    user = get_current_user(request)
+    flow_id = payload.get("flow_id")
+    
+    flow = knowledge_flows.get(flow_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+    
+    # TODO: implementar chunking + embeddings + Qdrant
+    await flow.emit_step('chunking', 'Indexando', 'running', 'Processando chunks...')
+    await asyncio.sleep(1)  # Simulate processing
+    await flow.emit_step('chunking', 'Indexando', 'done', 'Document indexed')
+    await flow.emit_step('done', 'Concluído', 'done', 'Processamento finalizado')
+    
+    return {"message": "Knowledge processing started"}
