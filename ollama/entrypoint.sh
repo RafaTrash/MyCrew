@@ -16,7 +16,7 @@ wait_for_ollama() {
 }
 
 # Lista de modelos a serem baixados
-MODELS=("qwen2.5:7b-instruct" "nomic-embed-text")
+MODELS=("qwen2.5:7b-instruct" "qwen2.5-coder:7b" "nomic-embed-text")
 
 # Função para verificar se modelo já existe
 model_exists() {

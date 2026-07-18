@@ -406,12 +406,6 @@ SELECT gen_random_uuid(), 'Hugging Face Inference', 'api', 'huggingface-inferenc
 WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'huggingface-inference');
 
 INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
-SELECT gen_random_uuid(), 'LM Studio (Local)', 'local', 'lm-studio',
-    '{"api_format": "openai_compatible", "requires_api_key": false, "requires_base_url": true}'::jsonb,
-    true, now(), now()
-WHERE NOT EXISTS (SELECT 1 FROM providers WHERE slug = 'lm-studio');
-
-INSERT INTO providers (id, name, type, slug, config, is_active, created_at, updated_at)
 SELECT gen_random_uuid(), 'Mistral AI', 'api', 'mistral',
     '{"api_format": "openai_compatible", "requires_api_key": true}'::jsonb,
     true, now(), now()
@@ -544,10 +538,10 @@ BEGIN
     -- Generate model ID for Cortex
     SELECT gen_random_uuid()::text INTO cortex_model_id;
     
-    -- Ensure admin has ollama config (auto-created for local providers)
-    INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
-    VALUES (admin_uuid, ollama_provider_id, 'http://localhost:11434', TRUE, '[]'::jsonb)
-    ON CONFLICT (user_id, provider_id) DO NOTHING;
+-- Ensure admin has ollama config (auto-created for local providers)
+INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+VALUES (admin_uuid, ollama_provider_id, NULL, TRUE, '[]'::jsonb)
+ON CONFLICT (user_id, provider_id) DO NOTHING;
     
     -- Add qwen2.5:7b-instruct model to admin's ollama config if not exists
     UPDATE user_provider_configs

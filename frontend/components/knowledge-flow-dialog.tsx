@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, FileText, Upload, Loader2, CheckCircle2 } from 'lucide-react'
+import { X, FileText, Upload, Loader2, CheckCircle2, HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Knowledge } from '@/lib/types'
 import type { IngestRecommendation, ChunkingStrategyType } from '@/lib/knowledge-types'
@@ -80,6 +80,13 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
       }
     }
   }, [recommendation, showReviewForm])
+
+  // Reseta confirmSubmitting quando o processo conclui com sucesso
+  useEffect(() => {
+    if (isComplete) {
+      setConfirmSubmitting(false)
+    }
+  }, [isComplete])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -181,14 +188,13 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
       aria-modal="true"
       aria-labelledby="knowledge-flow-title"
     >
-      <button
-        type="button"
-        aria-label="Fechar"
+      {/* Backdrop - sem onClick para impedir fechamento ao clicar fora */}
+      <div
         className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-        onClick={onClose}
+        aria-label="Fechar"
       />
 
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="relative z-10 flex h-full max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-border bg-card shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-border p-6">
           <div>
@@ -209,7 +215,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
             onClick={onClose}
             aria-label="Fechar"
             className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            disabled={initialSubmitting || !!flowId}
+            disabled={initialSubmitting || confirmSubmitting}
           >
             <X className="size-5" />
           </button>
@@ -356,7 +362,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
           </form>
         ) : (
           // Diagrama + Formulário de revisão
-          <div className="flex flex-col">
+          <div className="flex flex-col flex-1 min-h-0">
             {/* Diagrama de etapas */}
             <div className="border-b border-border p-6">
               <KnowledgeStepsDiagram steps={steps} currentStep={currentStep} operation="ingest" />
@@ -373,136 +379,141 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
 
             {/* Formulário de revisão - sempre visível quando temos recommendation */}
             {shouldShowReviewForm && recommendation && isRecommendation(recommendation) && (
-              <div className="flex-1 overflow-y-auto p-6 max-h-[60vh]">
-                {/* Recomendações do Cortex */}
-                <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
-                  <div className="flex items-start gap-3">
-                    <img 
-                      src="/cortex/cortex.png" 
-                      alt="Cortex" 
-                      className="size-8 animate-pulse"
-                    />
-                    <div className="flex-1">
-                      <h3 className="text-sm font-medium text-primary mb-2">Recomendações do Cortex</h3>
-                      <div className="space-y-1.5 text-xs">
-                        <p><span className="text-muted-foreground">Estratégia:</span> <span className="text-foreground font-medium">{recommendation.chunking_strategy.primary.type}</span></p>
-                        <p><span className="text-muted-foreground">Tamanho do chunk:</span> <span className="text-foreground">{recommendation.chunking_strategy.parameters.chunk_size}</span></p>
-                        <p><span className="text-muted-foreground">Sobreposição:</span> <span className="text-foreground">{recommendation.chunking_strategy.parameters.chunk_overlap}</span></p>
-                        <p className="mt-2 text-muted-foreground line-clamp-3">{recommendation.retrieval_hint}</p>
+              <>
+                <div className="flex-1 overflow-y-auto p-6">
+                  {/* Card único: Recomendações do Cortex + Documento Analisado (badges) */}
+                  <div className="rounded-lg border border-primary/30 bg-primary/10 p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Avatar Cortex */}
+                      <div className="flex shrink-0 items-center justify-center">
+                        <img 
+                          src="/cortex/cortex.png" 
+                          alt="Cortex" 
+                          className="size-10 animate-pulse"
+                        />
+                      </div>
+                      
+                      {/* Conteúdo principal */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-3">
+                          <h3 className="text-sm font-semibold text-primary">Recomendações do Cortex</h3>
+                          {recommendation.testing_questions && recommendation.testing_questions.length > 0 && (
+                            <HelpCircle className="size-4 text-primary/70" />
+                          )}
+                        </div>
+                        
+                        {/* Layout duas colunas */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Coluna esquerda: Recomendações + Badges do Documento Analisado */}
+                          <div className="space-y-2">
+                            <InfoRow label="Estratégia" value={recommendation.chunking_strategy.primary.type} />
+                            <InfoRow label="Tamanho do chunk" value={recommendation.chunking_strategy.parameters.chunk_size.toString()} />
+                            <InfoRow label="Sobreposição" value={recommendation.chunking_strategy.parameters.chunk_overlap.toString()} />
+                            <div className="mt-2">
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1">Dica de recuperação</p>
+                              <p className="text-xs text-foreground leading-relaxed">{recommendation.retrieval_hint}</p>
+                            </div>
+                            
+                            {/* Badges do Documento Analisado integrados */}
+                            <div className="mt-3 pt-3 border-t border-primary/20">
+                              <p className="text-[10px] uppercase tracking-wide text-primary/70 mb-2">Documento Analisado</p>
+                              <div className="flex flex-wrap gap-2">
+                                <InfoBadge label="Tipo" value={recommendation.document.file_type} />
+                                <InfoBadge label="Idioma" value={recommendation.document.language} />
+                                <InfoBadge label="Estrutura" value={recommendation.document.structure_level} />
+                                <InfoBadge label="Domínio" value={recommendation.document.domain} />
+                                <InfoBadge label="Tokens" value={recommendation.document.estimated_tokens?.toLocaleString() || '—'} />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Coluna direita: Questionamentos para Validação */}
+                          {recommendation.testing_questions && recommendation.testing_questions.length > 0 && (
+                            <div className="border-l border-primary/20 pl-4">
+                              <p className="text-[10px] uppercase tracking-wide text-primary/70 mb-2">Questionamentos para Validação</p>
+                              <ul className="space-y-1.5 text-xs text-foreground/90">
+                                {recommendation.testing_questions.map((q, idx) => (
+                                  <li key={idx} className="flex items-start gap-2">
+                                    <span className="text-primary/60 mt-0.5">•</span>
+                                    <span className="leading-tight">{q}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Testing Questions Section */}
-                {recommendation.testing_questions && recommendation.testing_questions.length > 0 && (
-                  <div className="rounded-lg border border-secondary bg-secondary/30 p-4 mt-4">
-                    <h3 className="text-sm font-medium text-secondary-foreground mb-3">Questionamentos para Validação</h3>
-                    <ul className="space-y-1.5 text-xs text-foreground">
-                      {recommendation.testing_questions.map((q, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-muted-foreground">•</span>
-                          <span>{q}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* Alerta de revisão necessária */}
+                  {recommendation.review_required && (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 mt-4">
+                      <p className="text-sm text-destructive">
+                        <strong>Atenção:</strong> Este documento requer revisão manual. 
+                        Confirme os parâmetros abaixo antes de prosseguir.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Configurações de chunking */}
+                  <div className="rounded-lg border border-border bg-background/50 p-5 mt-4">
+                    <h3 className="text-sm font-medium text-foreground mb-3">Estratégia de Chunking</h3>
+                    
+                    <Field label="Estratégia" htmlFor="chunkingStrategy">
+                      <select
+                        id="chunkingStrategy"
+                        value={selectedStrategy}
+                        onChange={(e) => setSelectedStrategy(e.target.value as ChunkingStrategyType)}
+                        className={inputClass}
+                      >
+                        {CHUNKING_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value} title={opt.description}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                        {CHUNKING_OPTIONS.find(o => o.value === selectedStrategy)?.description}
+                      </p>
+                    </Field>
+
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <Field label="Tamanho do chunk" htmlFor="chunkSize">
+                        <input
+                          id="chunkSize"
+                          type="number"
+                          value={chunkSize}
+                          onChange={(e) => setChunkSize(parseInt(e.target.value) || 512)}
+                          min={100}
+                          max={2048}
+                          className={inputClass}
+                        />
+                      </Field>
+
+                      <Field label="Sobreposição" htmlFor="chunkOverlap">
+                        <input
+                          id="chunkOverlap"
+                          type="number"
+                          value={chunkOverlap}
+                          onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 64)}
+                          min={0}
+                          max={chunkSize}
+                          className={inputClass}
+                        />
+                      </Field>
+                    </div>
                   </div>
-                )}
 
-                {/* Alerta de revisão necessária */}
-                {recommendation.review_required && (
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 mt-4">
-                    <p className="text-sm text-destructive">
-                      <strong>Atenção:</strong> Este documento requer revisão manual. 
-                      Confirme os parâmetros abaixo antes de prosseguir.
+                  {flowError && (
+                    <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive mt-4">
+                      {flowError}
                     </p>
-                  </div>
-                )}
-
-                {/* Informações do documento */}
-                <div className="rounded-lg border border-border bg-background/50 p-4 mt-4">
-                  <h3 className="text-sm font-medium text-foreground mb-3">Documento Analisado</h3>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Tipo:</span>
-                      <span className="ml-2 text-foreground">{recommendation.document.file_type}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Idioma:</span>
-                      <span className="ml-2 text-foreground">{recommendation.document.language}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Estrutura:</span>
-                      <span className="ml-2 text-foreground">{recommendation.document.structure_level}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Domínio:</span>
-                      <span className="ml-2 text-foreground">{recommendation.document.domain}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Tokens estimados:</span>
-                      <span className="ml-2 text-foreground">{recommendation.document.estimated_tokens?.toLocaleString()}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Dica de recuperação:</span>
-                      <p className="ml-2 mt-1 text-foreground text-xs line-clamp-3">{recommendation.retrieval_hint}</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* Configurações de chunking */}
-                <div className="rounded-lg border border-border bg-background/50 p-4 mt-4">
-                  <h3 className="text-sm font-medium text-foreground mb-3">Estratégia de Chunking</h3>
-                  
-                  <Field label="Estratégia" htmlFor="chunkingStrategy">
-                    <select
-                      id="chunkingStrategy"
-                      value={selectedStrategy}
-                      onChange={(e) => setSelectedStrategy(e.target.value as ChunkingStrategyType)}
-                      className={inputClass}
-                    >
-                      {CHUNKING_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label} — {opt.description}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Field label="Tamanho do chunk" htmlFor="chunkSize">
-                      <input
-                        id="chunkSize"
-                        type="number"
-                        value={chunkSize}
-                        onChange={(e) => setChunkSize(parseInt(e.target.value) || 512)}
-                        min={100}
-                        max={2048}
-                        className={inputClass}
-                      />
-                    </Field>
-
-                    <Field label="Sobreposição" htmlFor="chunkOverlap">
-                      <input
-                        id="chunkOverlap"
-                        type="number"
-                        value={chunkOverlap}
-                        onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 64)}
-                        min={0}
-                        max={chunkSize}
-                        className={inputClass}
-                      />
-                    </Field>
-                  </div>
-                </div>
-
-                {flowError && (
-                  <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive mt-4">
-                    {flowError}
-                  </p>
-                )}
-
-                <div className="mt-4 flex items-center justify-end gap-2">
+                {/* Footer com botões - fixo no bottom */}
+                <div className="flex-shrink-0 border-t border-border p-4 flex items-center justify-end gap-2 bg-card">
                   <button
                     type="button"
                     onClick={onClose}
@@ -527,11 +538,31 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
                     </button>
                   )}
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Componente para linha de informação simples
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-muted-foreground/70">{label}:</span>
+      <span className="text-foreground font-medium">{value}</span>
+    </div>
+  )
+}
+
+// Componente para badge de informação (inline, compacto)
+function InfoBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-md bg-secondary/50 px-2.5 py-1 text-xs">
+      <span className="text-muted-foreground">{label}:</span>
+      <span className="text-foreground font-medium">{value}</span>
     </div>
   )
 }

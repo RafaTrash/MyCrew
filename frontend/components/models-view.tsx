@@ -10,6 +10,7 @@ import { AddModelDialog } from './add-model-dialog'
 import { ConfigureProviderDialog } from './configure-provider-dialog'
 import { formatCompact } from './mini-charts'
 import { useAuth } from '@/lib/auth-context'
+import { useToast } from './ui/toaster'
 
 interface ModelsResponse {
   providers: Provider[]
@@ -52,6 +53,7 @@ function computeSummary(providers: Provider[]) {
 
 export function ModelsView() {
   const { user, token } = useAuth()
+  const { toast } = useToast()
   
   const { data, isLoading, isValidating, mutate, error } = useSWR<ModelsResponse>(
     token ? ['/api/models'] : null,
@@ -71,7 +73,6 @@ export function ModelsView() {
   const [modelDialogOpen, setModelDialogOpen] = useState(false)
   const [configureDialogOpen, setConfigureDialogOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
   const providers = data?.providers ?? []
   const totalModels = data?.totalModels ?? 0
@@ -115,7 +116,6 @@ export function ModelsView() {
 
   async function handleSync() {
     setSyncing(true)
-    setSyncMessage(null)
     try {
       const res = await fetch('/api/models/sync', {
         method: 'POST',
@@ -123,14 +123,14 @@ export function ModelsView() {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        setSyncMessage(`Erro: ${body.error ?? 'Falha na sincronização'}`)
+        toast(`Erro: ${body.error ?? 'Falha na sincronização'}`, 'error')
       } else {
         const data = await res.json()
-        setSyncMessage(`Sincronizado com sucesso! ${data.synced ?? 0} modelos encontrados.`)
+        toast(`Sincronizado com sucesso! ${data.synced ?? 0} modelos encontrados.`, 'success')
       }
       await mutate()
     } catch (err) {
-      setSyncMessage(`Erro de conexão: ${err instanceof Error ? err.message : 'Tente novamente'}`)
+      toast(`Erro de conexão: ${err instanceof Error ? err.message : 'Tente novamente'}`, 'error')
       await mutate()
     } finally {
       setSyncing(false)
@@ -166,28 +166,18 @@ export function ModelsView() {
           </p>
         </div>
 
-        <div className="flex items-start gap-2">
-          <div className="flex flex-col items-start gap-1">
-            <button
-              type="button"
-              onClick={handleSync}
-              disabled={syncing || isValidating || !token}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
-            >
-              <RefreshCw
-                className={cn('size-4', (syncing || isValidating) && 'animate-spin')}
-              />
-              {syncing ? 'Sincronizando...' : 'Atualizar'}
-            </button>
-            {syncMessage && (
-              <span className={cn(
-                'text-xs px-1',
-                syncMessage.startsWith('Erro') ? 'text-destructive' : 'text-success'
-              )}>
-                {syncMessage}
-              </span>
-            )}
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing || isValidating || !token}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
+          >
+            <RefreshCw
+              className={cn('size-4', (syncing || isValidating) && 'animate-spin')}
+            />
+            {syncing ? 'Sincronizando...' : 'Atualizar'}
+          </button>
           <button
             type="button"
             onClick={() => setConfigureDialogOpen(true)}

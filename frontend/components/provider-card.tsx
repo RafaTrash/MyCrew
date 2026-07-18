@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import type { Model, Provider, UsageMetrics } from '@/lib/types'
 import { formatCompact, MiniBars, Sparkline } from './mini-charts'
 import { ProviderLogo, hasProviderLogo } from '@/lib/provider-logo'
+import { formatNumber } from '@/lib/format-number'
 
 const STATUS_STYLES: Record<Model['status'], string> = {
   ready: 'bg-primary',
@@ -31,8 +32,10 @@ function aggregateUsage(models: Model[]): UsageMetrics {
     tokens += m.usage.tokens
     latencySum += m.usage.avgLatencyMs * (m.usage.requests || 1)
     latencyWeight += m.usage.requests || 1
-    m.usage.daily.forEach((v, i) => {
-      daily[i] = (daily[i] ?? 0) + v
+    // Handle both number[] and object[] formats for daily
+    m.usage.daily.forEach((v: any, i: number) => {
+      const val = typeof v === 'number' ? v : (v?.value ?? 0)
+      daily[i] = (daily[i] ?? 0) + val
     })
   }
 
@@ -123,7 +126,7 @@ export function ProviderCard({ provider }: { provider: Provider }) {
         <Metric
           icon={<Timer className="size-3" aria-hidden="true" />}
           label="Latência"
-          value={usage.avgLatencyMs ? `${usage.avgLatencyMs}ms` : '—'}
+          value={usage.avgLatencyMs ? formatNumber(usage.avgLatencyMs, 'ms') : '—'}
         />
         <Metric
           icon={<Zap className="size-3" aria-hidden="true" />}

@@ -12,6 +12,7 @@ interface AvailableModel {
   name: string
   description?: string
   context?: string
+  size?: string
 }
 
 interface AddModelDialogProps {
@@ -52,7 +53,7 @@ export function AddModelDialog({ open, onClose, onSubmit, token, providers = [] 
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  // Buscar modelos quando um provider API é selecionado
+  // Buscar modelos quando um provider é selecionado (inclui provedores locais como Ollama)
   useEffect(() => {
     async function fetchModels() {
       if (!selectedProviderId) {
@@ -61,7 +62,14 @@ export function AddModelDialog({ open, onClose, onSubmit, token, providers = [] 
       }
       
       const provider = providers.find(p => p.id === selectedProviderId)
-      if (!provider || !provider.slug || provider.type !== 'api' || !provider.hasApiKey) {
+      if (!provider || !provider.slug) {
+        setAvailableModels([])
+        return
+      }
+      
+      // Para provedores locais (Ollama, lm-studio), não exige API key
+      // Para provedores API, exige API key configurada
+      if (provider.type === 'api' && !provider.hasApiKey) {
         setAvailableModels([])
         return
       }

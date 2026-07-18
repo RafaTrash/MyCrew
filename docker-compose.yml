@@ -181,10 +181,11 @@ services:
       - OLLAMA_REQUEST_TIMEOUT=${OLLAMA_REQUEST_TIMEOUT:-240}
       - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-512}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - CORTEX_MODEL=${CORTEX_MODEL:-qwen2.5:7b-instruct}
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-mycrew_agent_kb}
       - QDRANT_TOP_K=${QDRANT_TOP_K:-4}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-mycrew}

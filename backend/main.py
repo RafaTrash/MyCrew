@@ -29,8 +29,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers for modular organization
+try:
+    from routers import auth_router, models_router
+    app.include_router(auth_router, prefix="/auth")
+    app.include_router(models_router, prefix="/me/models")
+except Exception:
+    pass  # Fallback to original endpoints in main.py
+
 # Configurações via ambiente
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "30"))
 OLLAMA_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "mycrew_agent_kb")
@@ -231,16 +239,30 @@ def get_db_connection():
     return engine.connect()
 
 
+import logging
+_logger = logging.getLogger(__name__)
+
+
 def _query_user_providers_with_models(conn, user_id: str) -> dict:
-    """Query providers with user's configurations and models using JSONB in user_provider_configs"""
+    """Query providers with user's configurations and models - includes usage stats from providers_usage table"""
     try:
-        # Query using the new JSONB models field
+        # Get base providers data
         result = conn.execute(text("""
+            WITH user_configs AS (
+                SELECT provider_id, base_url, api_key_encrypted, models
+                FROM user_provider_configs
+                WHERE user_id = :user_id AND is_active = TRUE
+            ),
+            local_providers AS (
+                SELECT p.id, p.name, p.type, p.slug, p.config
+                FROM providers p
+                WHERE p.type = 'local' AND p.is_active = TRUE
+            )
             SELECT jsonb_build_object(
                 'providers', COALESCE(jsonb_agg(p_obj ORDER BY p_obj->>'name'), '[]'::jsonb),
-                'totalModels', (SELECT COALESCE(SUM(jsonb_array_length(upc.models)), 0) 
-                               FROM user_provider_configs upc 
-                               WHERE upc.user_id = :user_id AND upc.models IS NOT NULL AND jsonb_array_length(upc.models) > 0)
+                'totalModels', (SELECT COUNT(*) FROM models m 
+                               JOIN providers p ON p.id = m.provider_id 
+                               WHERE m.user_id = :user_id)
             )
             FROM (
                 SELECT jsonb_build_object(
@@ -249,19 +271,66 @@ def _query_user_providers_with_models(conn, user_id: str) -> dict:
                     'type', p.type,
                     'slug', p.slug,
                     'config', p.config,
-                    'hasApiKey', (upc.api_key_encrypted IS NOT NULL),
+                    'hasApiKey', TRUE,
                     'baseUrl', upc.base_url,
                     'models', COALESCE(upc.models, '[]'::jsonb)
                 ) AS p_obj
-                FROM user_provider_configs upc
-                JOIN providers p ON p.id = upc.provider_id
-                WHERE upc.user_id = :user_id AND upc.is_active = TRUE
+                FROM providers p
+                JOIN user_configs upc ON p.id = upc.provider_id
+                WHERE p.type = 'api'
+                
+                UNION ALL
+                
+                SELECT jsonb_build_object(
+                    'id', lp.id::text,
+                    'name', lp.name,
+                    'type', lp.type,
+                    'slug', lp.slug,
+                    'config', lp.config,
+                    'hasApiKey', FALSE,
+                    'baseUrl', COALESCE(upc.base_url, 'http://ollama:11434'),
+                    'models', (
+                        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                            'id', om.id::text,
+                            'name', om.name,
+                            'status', om.status,
+                            'kind', om.kind,
+                            'size', om.size,
+                            'context', om.context,
+                            'usage', (
+                                SELECT jsonb_build_object(
+                                    'requests', COALESCE(usg.requests, 0)::INTEGER,
+                                    'tokens', COALESCE(usg.tokens, 0)::INTEGER,
+                                    'avgLatencyMs', COALESCE(usg.avg_latency, 0)::INTEGER,
+                                    'daily', '[]'::jsonb
+                                )
+                            ),
+                            'created_at', to_char(om.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                            'updated_at', to_char(om.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                        )), '[]'::jsonb)
+                        FROM models om
+                        LEFT JOIN (
+                            SELECT 
+                                model_id,
+                                COUNT(*) as requests,
+                                SUM(total_tokens) as tokens,
+                                ROUND(AVG(latency_ms))::INTEGER as avg_latency
+                            FROM providers_usage 
+                            WHERE user_id = :user_id AND created_at >= now() - interval '7 days'
+                            GROUP BY model_id
+                        ) usg ON usg.model_id = om.id
+                        WHERE om.user_id = :user_id AND om.provider_id = lp.id
+                    )
+                ) AS p_obj
+                FROM local_providers lp
+                LEFT JOIN user_configs upc ON lp.id = upc.provider_id
             ) sub;
         """), {"user_id": user_id}).fetchone()
         if result and result[0]:
             return result[0]
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.warning(f"[Models] Error in query: {e}")
+    
     return {"providers": [], "totalModels": 0}
 
 
@@ -408,6 +477,7 @@ async def get_providers():
                     'config', p.config
                 ) ORDER BY p.name)
                 FROM providers p
+                WHERE p.is_active = TRUE
             """)).fetchone()
             providers = result[0] if result and result[0] else []
             return {"providers": providers}
@@ -471,66 +541,115 @@ async def configure_provider(
 
 @app.get("/me/providers/{provider_slug}/models")
 async def get_provider_models(provider_slug: str, request: Request):
-    """Get available models from a provider API"""
+    """Get available models from a provider API or local Ollama instance"""
     user = get_current_user(request)
     try:
         with get_db_connection() as conn:
             # Get provider info
             provider = conn.execute(text("""
-                SELECT p.id, p.slug, p.config FROM providers p WHERE p.slug = :slug
+                SELECT p.id, p.slug, p.type, p.config FROM providers p WHERE p.slug = :slug
             """), {"slug": provider_slug}).fetchone()
             
             if not provider:
                 raise HTTPException(status_code=404, detail=f"Provedor '{provider_slug}' não encontrado")
             
-            # Get user's config for this provider
-            user_config = conn.execute(text("""
-                SELECT base_url, api_key_encrypted FROM user_provider_configs 
-                WHERE user_id = :user_id AND provider_id = :provider_id
-            """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+            provider_type = provider[2]
             
-            if not user_config:
-                raise HTTPException(status_code=400, detail="Configure o provedor antes de buscar modelos")
+            # For local providers (like Ollama), auto-create config if not exists and use default URL
+            if provider_type == 'local':
+                user_config = conn.execute(text("""
+                    SELECT id, base_url FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+                
+                base_url = OLLAMA_URL  # Use default Ollama URL
+                
+                if not user_config:
+                    # Auto-create config for local provider
+                    conn.execute(text("""
+                        INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+                        VALUES (:user_id, :provider_id, :base_url, TRUE, '[]'::jsonb)
+                        ON CONFLICT (user_id, provider_id) DO NOTHING
+                    """), {
+                        "user_id": user["id"],
+                        "provider_id": provider[0],
+                        "base_url": base_url
+                    })
+                    conn.commit()
+                elif user_config[1]:
+                    base_url = user_config[1]
+            else:
+                # Get user's config for API providers
+                user_config = conn.execute(text("""
+                    SELECT base_url, api_key_encrypted FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+                
+                if not user_config:
+                    raise HTTPException(status_code=400, detail="Configure o provedor antes de buscar modelos")
+                
+                base_url = user_config[0]
+                if not base_url:
+                    base_url = "https://openrouter.ai/api"  # Default for OpenRouter
+                
+                api_key_encrypted = user_config[1]
+                if isinstance(api_key_encrypted, (memoryview, bytearray)):
+                    api_key_encrypted = bytes(api_key_encrypted)
+                
+                if not api_key_encrypted or len(api_key_encrypted) == 0:
+                    raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
+                
+                api_key = decrypt_api_key(api_key_encrypted)
             
-            base_url = user_config[0]
-            if not base_url:
-                base_url = "https://openrouter.ai/api"  # Default for OpenRouter
-            
-            api_key_encrypted = user_config[1]
-            if isinstance(api_key_encrypted, (memoryview, bytearray)):
-                api_key_encrypted = bytes(api_key_encrypted)
-            
-            if not api_key_encrypted or len(api_key_encrypted) == 0:
-                raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
-            
-            api_key = decrypt_api_key(api_key_encrypted)
-            
-            # Fetch models from API
+            # Fetch models from provider
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.get(
-                        f"{base_url}/v1/models",
-                        headers={"Authorization": f"Bearer {api_key}"}
-                    )
-                    
-                    if response.status_code == 401:
-                        raise HTTPException(status_code=401, detail="API key inválida ou expirada")
-                    elif response.status_code != 200:
-                        raise HTTPException(status_code=502, detail=f"Erro na API: status {response.status_code}")
-                    
-                    data = response.json()
-                    models = data.get("data", [])
-                    
-                    # Format model list
-                    formatted_models = [
-                        {
-                            "id": m.get("id"),
-                            "name": m.get("id"),
-                            "description": m.get("name", ""),
-                            "context": formatContext(m.get("context_length", 8192))
-                        }
-                        for m in models
-                    ]
+                async with httpx.AsyncClient(timeout=OLLAMA_REQUEST_TIMEOUT) as client:
+                    if provider_type == 'local':
+                        # Local providers (Ollama) use /api/tags endpoint
+                        response = await client.get(f"{base_url}/api/tags")
+                        
+                        if response.status_code != 200:
+                            raise HTTPException(status_code=502, detail=f"Erro no provedor local: status {response.status_code}")
+                        
+                        data = response.json()
+                        models = data.get("models", [])
+                        
+                        # Format Ollama model list
+                        formatted_models = [
+                            {
+                                "id": m.get("name"),
+                                "name": m.get("name"),
+                                "description": m.get("name", ""),
+                                "size": formatSize(m.get("size", 0)),
+                                "context": str(m.get("details", {}).get("context_length", "8K") if m.get("details") else "8K")
+                            }
+                            for m in models
+                        ]
+                    else:
+                        # API providers use /v1/models endpoint
+                        response = await client.get(
+                            f"{base_url}/v1/models",
+                            headers={"Authorization": f"Bearer {api_key}"}
+                        )
+                        
+                        if response.status_code == 401:
+                            raise HTTPException(status_code=401, detail="API key inválida ou expirada")
+                        elif response.status_code != 200:
+                            raise HTTPException(status_code=502, detail=f"Erro na API: status {response.status_code}")
+                        
+                        data = response.json()
+                        models = data.get("data", [])
+                        
+                        # Format model list
+                        formatted_models = [
+                            {
+                                "id": m.get("id"),
+                                "name": m.get("id"),
+                                "description": m.get("name", ""),
+                                "context": formatContext(m.get("context_length", 8192))
+                            }
+                            for m in models
+                        ]
                     
                     return {"models": formatted_models}
             except httpx.RequestError as e:
@@ -550,74 +669,123 @@ async def test_provider_connection(provider_slug: str, request: Request):
         with get_db_connection() as conn:
             # Get provider info
             provider = conn.execute(text("""
-                SELECT p.id, p.slug, p.config FROM providers p WHERE p.slug = :slug
+                SELECT p.id, p.slug, p.type, p.config FROM providers p WHERE p.slug = :slug
             """), {"slug": provider_slug}).fetchone()
             
             if not provider:
                 raise HTTPException(status_code=404, detail=f"Provedor '{provider_slug}' não encontrado")
             
-            # Get user's config for this provider
-            user_config = conn.execute(text("""
-                SELECT base_url, api_key_encrypted FROM user_provider_configs 
-                WHERE user_id = :user_id AND provider_id = :provider_id
-            """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+            provider_type = provider[2]
             
-            if not user_config:
-                raise HTTPException(status_code=400, detail="Configure o provedor antes de testar conexão")
+            # For local providers (like Ollama), auto-create config if not exists
+            if provider_type == 'local':
+                user_config = conn.execute(text("""
+                    SELECT id, base_url FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+                
+                base_url = OLLAMA_URL
+                
+                if not user_config:
+                    conn.execute(text("""
+                        INSERT INTO user_provider_configs (user_id, provider_id, base_url, is_active, models)
+                        VALUES (:user_id, :provider_id, :base_url, TRUE, '[]'::jsonb)
+                        ON CONFLICT (user_id, provider_id) DO NOTHING
+                    """), {
+                        "user_id": user["id"],
+                        "provider_id": provider[0],
+                        "base_url": base_url
+                    })
+                    conn.commit()
+                elif user_config[1]:
+                    base_url = user_config[1]
+            else:
+                # Get user's config for API providers
+                user_config = conn.execute(text("""
+                    SELECT base_url, api_key_encrypted FROM user_provider_configs 
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """), {"user_id": user["id"], "provider_id": provider[0]}).fetchone()
+                
+                if not user_config:
+                    raise HTTPException(status_code=400, detail="Configure o provedor antes de testar conexão")
+                
+                base_url = user_config[0] or "https://openrouter.ai/api"
+                
+                api_key_encrypted = user_config[1]
+                if isinstance(api_key_encrypted, (memoryview, bytearray)):
+                    api_key_encrypted = bytes(api_key_encrypted)
+                
+                if not api_key_encrypted or len(api_key_encrypted) == 0:
+                    raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
+                
+                api_key = decrypt_api_key(api_key_encrypted)
             
-            base_url = user_config[0] or "https://openrouter.ai/api"
-            
-            api_key_encrypted = user_config[1]
-            if isinstance(api_key_encrypted, (memoryview, bytearray)):
-                api_key_encrypted = bytes(api_key_encrypted)
-            
-            if not api_key_encrypted or len(api_key_encrypted) == 0:
-                raise HTTPException(status_code=400, detail="API key não configurada para este provedor")
-            
-            api_key = decrypt_api_key(api_key_encrypted)
-            
-            config = provider[2] or {}
-            api_format = config.get("api_format", "")
-            is_openai_compatible = api_format in ["openai", "openai_compatible"]
-            
-            if provider_slug == 'openrouter' or is_openai_compatible:
+            # Test connection
+            if provider_type == 'local':
+                # For local providers (Ollama), check /api/tags endpoint
                 try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        response = await client.get(
-                            f"{base_url}/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"}
-                        )
+                    async with httpx.AsyncClient(timeout=OLLAMA_REQUEST_TIMEOUT) as client:
+                        response = await client.get(f"{base_url}/api/tags")
                     
                     if response.status_code == 200:
                         # If model_name provided, check if model exists
                         if model_name:
                             data = response.json()
-                            models = data.get("data", [])
+                            models = data.get("models", [])
                             model_found = any(
-                                m.get("id") == model_name or m.get("name", "").lower() == model_name.lower()
+                                m.get("name") == model_name
                                 for m in models
                             )
                             return {"connected": True, "modelFound": model_found, 
                                     "message": "Conexão estabelecida" + (" - modelo encontrado" if model_found else " - modelo não encontrado")}
                         return {"connected": True, "message": "Conexão estabelecida com sucesso"}
-                    elif response.status_code == 401:
-                        raise HTTPException(status_code=401, detail="API key inválida ou expirada")
-                    elif response.status_code == 403:
-                        raise HTTPException(status_code=403, detail="Acesso negado. Verifique permissões da API key")
                     else:
-                        raise HTTPException(status_code=502, detail=f"Erro na API: status {response.status_code}")
+                        raise HTTPException(status_code=502, detail=f"Erro no provedor local: status {response.status_code}")
                 except httpx.RequestError as e:
                     raise HTTPException(status_code=502, detail=f"Falha na conexão: {str(e)}")
             else:
-                # Generic test - just check if we can reach the base URL
-                try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        response = await client.get(f"{base_url}")
-                    if response.status_code < 500:
-                        return {"connected": True, "message": "Conexão estabelecida com sucesso"}
-                    raise HTTPException(status_code=502, detail=f"Erro na conexão: status {response.status_code}")
-                except httpx.RequestError as e:
-                    raise HTTPException(status_code=502, detail=f"Falha na conexão: {str(e)}")
+                config = provider[3] or {}
+                api_format = config.get("api_format", "")
+                is_openai_compatible = api_format in ["openai", "openai_compatible"]
+                
+                if provider_slug == 'openrouter' or is_openai_compatible:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            response = await client.get(
+                                f"{base_url}/v1/models",
+                                headers={"Authorization": f"Bearer {api_key}"}
+                            )
+                        
+                        if response.status_code == 200:
+                            # If model_name provided, check if model exists
+                            if model_name:
+                                data = response.json()
+                                models = data.get("data", [])
+                                model_found = any(
+                                    m.get("id") == model_name or m.get("name", "").lower() == model_name.lower()
+                                    for m in models
+                                )
+                                return {"connected": True, "modelFound": model_found, 
+                                        "message": "Conexão estabelecida" + (" - modelo encontrado" if model_found else " - modelo não encontrado")}
+                            return {"connected": True, "message": "Conexão estabelecida com sucesso"}
+                        elif response.status_code == 401:
+                            raise HTTPException(status_code=401, detail="API key inválida ou expirada")
+                        elif response.status_code == 403:
+                            raise HTTPException(status_code=403, detail="Acesso negado. Verifique permissões da API key")
+                        else:
+                            raise HTTPException(status_code=502, detail=f"Erro na API: status {response.status_code}")
+                    except httpx.RequestError as e:
+                        raise HTTPException(status_code=502, detail=f"Falha na conexão: {str(e)}")
+                else:
+                    # Generic test - just check if we can reach the base URL
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            response = await client.get(f"{base_url}")
+                        if response.status_code < 500:
+                            return {"connected": True, "message": "Conexão estabelecida com sucesso"}
+                        raise HTTPException(status_code=502, detail=f"Erro na conexão: status {response.status_code}")
+                    except httpx.RequestError as e:
+                        raise HTTPException(status_code=502, detail=f"Falha na conexão: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:
@@ -640,7 +808,7 @@ async def get_models(request: Request):
 
 @app.post("/models/sync")
 async def sync_models(request: Request):
-    """Sync models from Ollama for the authenticated user - stores models in JSONB"""
+    """Sync models from Ollama for the authenticated user - stores in both models table and JSONB"""
     user = get_current_user(request)
     try:
         with get_db_connection() as conn:
@@ -681,34 +849,56 @@ async def sync_models(request: Request):
                 
                 ollama_models = response.json().get("models", [])
                 
-                # Build model list for JSONB
-                models_to_add = []
+                # Upsert into models table and build JSONB list
+                models_to_add_jsonb = []
+                synced_count = 0
+                
                 for model in ollama_models:
-                    models_to_add.append({
-                        "id": _generate_model_id(),
-                        "name": model.get("name", ""),
+                    model_name = model.get("name", "")
+                    model_kind = getModelKind(model_name)
+                    model_size = formatSize(model.get("size", 0))
+                    model_context = str(model.get("details", {}).get("context_length", "8K") if model.get("details") else "8K")
+                    
+                    # Upsert into models table (INSERT ... ON CONFLICT DO UPDATE)
+                    conn.execute(text("""
+                        INSERT INTO models (user_id, provider_id, name, status, kind, size, context, metadata, created_at, updated_at)
+                        VALUES (:user_id, :provider_id, :name, 'ready', :kind, :size, :context, '{}', now(), now())
+                        ON CONFLICT (user_id, provider_id, name) 
+                        DO UPDATE SET 
+                            status = 'ready',
+                            kind = EXCLUDED.kind,
+                            size = EXCLUDED.size,
+                            context = EXCLUDED.context,
+                            updated_at = now()
+                    """), {
+                        "user_id": user["id"],
+                        "provider_id": provider_id,
+                        "name": model_name,
+                        "kind": model_kind,
+                        "size": model_size,
+                        "context": model_context
+                    })
+                    
+                    # Also build JSONB list for user_provider_configs
+                    model_id = conn.execute(text("""
+                        SELECT id FROM models WHERE user_id = :user_id AND provider_id = :provider_id AND name = :name
+                    """), {"user_id": user["id"], "provider_id": provider_id, "name": model_name}).scalar()
+                    
+                    models_to_add_jsonb.append({
+                        "id": str(model_id) if model_id else _generate_model_id(),
+                        "name": model_name,
                         "status": "ready",
-                        "kind": getModelKind(model.get("name", "")),
-                        "size": formatSize(model.get("size", 0)),
-                        "context": str(model.get("details", {}).get("context_length", "8K") if model.get("details") else "8K"),
+                        "kind": model_kind,
+                        "size": model_size,
+                        "context": model_context,
                         "created_at": datetime.utcnow().isoformat() + "Z",
                         "updated_at": datetime.utcnow().isoformat() + "Z"
                     })
+                    synced_count += 1
                 
-                # Get existing models and merge
-                user_config = conn.execute(text("""
-                    SELECT models FROM user_provider_configs 
-                    WHERE user_id = :user_id AND provider_id = :provider_id
-                """), {"user_id": user["id"], "provider_id": provider_id}).fetchone()
+                conn.commit()
                 
-                existing_models = list(user_config[0]) if user_config and user_config[0] else []
-                
-                # Add only new models (avoid duplicates)
-                for new_model in models_to_add:
-                    if not any(m.get('name') == new_model['name'] for m in existing_models):
-                        existing_models.append(new_model)
-                
-                # Update JSONB
+                # Update JSONB with all models from Ollama (replace to keep in sync)
                 conn.execute(text("""
                     UPDATE user_provider_configs 
                     SET models = :models
@@ -716,12 +906,12 @@ async def sync_models(request: Request):
                 """), {
                     "user_id": user["id"],
                     "provider_id": provider_id,
-                    "models": json.dumps(existing_models)
+                    "models": json.dumps(models_to_add_jsonb)
                 })
-                
                 conn.commit()
+                
                 db_data = _query_user_providers_with_models(conn, user["id"])
-                return {"synced": len(models_to_add), "providers": db_data.get("providers", []), "totalModels": db_data.get("totalModels", 0)}
+                return {"synced": synced_count, "providers": db_data.get("providers", []), "totalModels": db_data.get("totalModels", 0)}
             except httpx.RequestError as e:
                 raise HTTPException(status_code=502, detail=f"Não foi possível conectar ao Ollama em {ollama_base_url}: {str(e)}")
     except HTTPException:
@@ -1008,8 +1198,13 @@ async def knowledge_ingest(
     flow = KnowledgeFlow(flow_id, user["id"], file_content, file.filename or "unknown", cortex_prompt)
     knowledge_flows[flow_id] = flow
     
+    # Delay pequeno para garantir que o SSE se conecte antes do processamento iniciar
+    async def delayed_process():
+        await asyncio.sleep(0.5)
+        await _process_flow_background(flow, user["id"], name, file_type)
+    
     # Processa em background para que SSE consiga capturar eventos
-    asyncio.create_task(_process_flow_background(flow, user["id"], name, file_type))
+    asyncio.create_task(delayed_process())
     
     return {"flow_id": flow_id}
 
@@ -1079,7 +1274,8 @@ async def knowledge_confirm(
             else:
                 document_id = str(uuid.uuid4())
         
-        await flow.continue_after_confirmation(chunking_params)
+        # Pass document_id to continue_after_confirmation
+        await flow.continue_after_confirmation(chunking_params, str(document_id))
         
         # Persist chunks to database
         if flow._content and flow._recommendation:

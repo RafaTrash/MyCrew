@@ -28,7 +28,11 @@ export function Sparkline({
   color = 'var(--primary)',
 }: SparklineProps) {
   const gradientId = useId()
-  const hasData = data.length > 0 && data.some((n) => n > 0)
+  // Convert data to numbers (handle both number[] and object[])
+  const numericData = (data as any[]).map((v) =>
+    typeof v === 'number' ? v : (v?.value ?? 0)
+  )
+  const hasData = numericData.length > 0 && numericData.some((n) => n > 0)
 
   if (!hasData) {
     return (
@@ -51,12 +55,12 @@ export function Sparkline({
     )
   }
 
-  const max = Math.max(...data)
-  const min = Math.min(...data)
+  const max = Math.max(...numericData)
+  const min = Math.min(...numericData)
   const range = max - min || 1
-  const stepX = width / (data.length - 1 || 1)
+  const stepX = width / (numericData.length - 1 || 1)
 
-  const points = data.map((value, i) => {
+  const points = numericData.map((value, i) => {
     const x = i * stepX
     const y = height - ((value - min) / range) * (height - 4) - 2
     return [x, y] as const
@@ -109,14 +113,18 @@ export function MiniBars({
   className,
   color = 'var(--primary)',
 }: MiniBarsProps) {
-  const max = Math.max(...data, 1)
+  // Convert data to numbers (handle both number[] and object[])
+  const numericData = (data as any[]).map((v) =>
+    typeof v === 'number' ? v : (v?.value ?? 0)
+  )
+  const max = Math.max(...numericData, 1)
   return (
     <div
       className={cn('flex h-9 items-end gap-0.5', className)}
       role="img"
       aria-label="Consultas por dia"
     >
-      {data.map((value, i) => (
+      {numericData.map((value, i) => (
         <div
           key={i}
           className="flex-1 rounded-sm"
