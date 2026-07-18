@@ -14,13 +14,6 @@ interface KnowledgeFlowDialogProps {
   token: string | null
 }
 
-interface KnowledgeSubmitPayload {
-  name: string
-  description?: string
-  file: File
-  tags?: string[]
-}
-
 const ALLOWED_FILE_TYPES = ['.pdf', '.md', '.xlsx', '.csv', '.txt', '.docx', '.pptx']
 const CHUNKING_OPTIONS: { value: ChunkingStrategyType; label: string; description: string }[] = [
   { value: 'fixed_size', label: 'Tamanho Fixo', description: 'Conteúdo desestruturado, sem necessidade de preservar semântica fina' },
@@ -44,11 +37,12 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
   
   const [flowId, setFlowId] = useState<string | null>(null)
   const [showReviewForm, setShowReviewForm] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [initialSubmitting, setInitialSubmitting] = useState(false)
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // SSE connection
-  const { steps, currentStep, recommendation, isComplete, error: flowError } = useKnowledgeFlow({
+  const { steps, currentStep, recommendation, isComplete, error: flowError, hasAwaitingConfirmation } = useKnowledgeFlow({
     flowId,
     operation: 'ingest',
     enabled: !!flowId,
@@ -75,10 +69,9 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
     }
   }, [open])
 
-  // Atualiza form com recommendation quando disponível
+  // Atualiza form com recommendation quando disponível (via SSE ou fallback API)
   useEffect(() => {
     if (recommendation && !showReviewForm) {
-      // Type guard para IngestRecommendation
       if (recommendation.operation === 'ingest') {
         setShowReviewForm(true)
         setChunkSize(recommendation.chunking_strategy.parameters.chunk_size)
@@ -131,7 +124,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
       return
     }
 
-    setSubmitting(true)
+    setInitialSubmitting(true)
     try {
       const result = await startKnowledgeIngest(
         { name: name.trim(), description: description.trim() || undefined, file, tags: tags.length ? tags : undefined },
@@ -140,14 +133,14 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
       setFlowId(result.flow_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao iniciar processamento.')
-      setSubmitting(false)
+      setInitialSubmitting(false)
     }
   }
 
   async function handleConfirmReview() {
     if (!flowId) return
     
-    setSubmitting(true)
+    setConfirmSubmitting(true)
     try {
       await confirmKnowledgeIngest({
         flow_id: flowId,
@@ -159,7 +152,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
       // Aguarda conclusão via SSE
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao confirmar.')
-      setSubmitting(false)
+      setConfirmSubmitting(false)
     }
   }
 
@@ -172,6 +165,14 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
   // Type guard para garantir que recommendation é IngestRecommendation
   const isRecommendation = (rec: typeof recommendation): rec is IngestRecommendation => 
     rec?.operation === 'ingest'
+
+  // Mostra o formulário de revisão quando:
+  // - recommendation chegou via SSE ou fallback API, OU
+  // - SSE indicou que awaiting_confirmation está done
+  const shouldShowReviewForm = hasAwaitingConfirmation || (recommendation && isRecommendation(recommendation))
+
+  // Mostra mensagem de sucesso após conclusão
+  const showSuccess = isComplete
 
   return (
     <div
@@ -195,7 +196,12 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
               Adicionar Conhecimento
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {flowId ? 'Processando documento com Cortex...' : 'Faça upload de um documento para análise inteligente.'}
+              {showSuccess 
+                ? 'Documento processado com sucesso!' 
+                : flowId 
+                  ? 'Processando documento com Cortex...' 
+                  : 'Faça upload de um documento para análise inteligente.'
+              }
             </p>
           </div>
           <button
@@ -203,7 +209,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
             onClick={onClose}
             aria-label="Fechar"
             className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            disabled={submitting || !!flowId}
+            disabled={initialSubmitting || !!flowId}
           >
             <X className="size-5" />
           </button>
@@ -330,16 +336,16 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
                 type="button"
                 onClick={onClose}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                disabled={submitting}
+                disabled={initialSubmitting}
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={initialSubmitting}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
-                {submitting ? (
+                {initialSubmitting ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <FileText className="size-4" />
@@ -354,14 +360,58 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
             {/* Diagrama de etapas */}
             <div className="border-b border-border p-6">
               <KnowledgeStepsDiagram steps={steps} currentStep={currentStep} operation="ingest" />
+              
+              {/* Mensagem de sucesso após conclusão */}
+              {showSuccess && (
+                <div className="mt-4 rounded-lg bg-success/20 px-4 py-3 text-center">
+                  <p className="text-sm text-success font-medium">
+                    ✓ Documento indexado com sucesso! Você pode fechar a janela ou revisar os dados abaixo.
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Formulário de revisão (mostra quando awaiting_confirmation está done) */}
-            {showReviewForm && recommendation && isRecommendation(recommendation) && (
-              <div className="flex flex-col gap-5 overflow-y-auto p-6">
+            {/* Formulário de revisão - sempre visível quando temos recommendation */}
+            {shouldShowReviewForm && recommendation && isRecommendation(recommendation) && (
+              <div className="flex-1 overflow-y-auto p-6 max-h-[60vh]">
+                {/* Recomendações do Cortex */}
+                <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <img 
+                      src="/cortex/cortex.png" 
+                      alt="Cortex" 
+                      className="size-8 animate-pulse"
+                    />
+                    <div className="flex-1">
+                      <h3 className="text-sm font-medium text-primary mb-2">Recomendações do Cortex</h3>
+                      <div className="space-y-1.5 text-xs">
+                        <p><span className="text-muted-foreground">Estratégia:</span> <span className="text-foreground font-medium">{recommendation.chunking_strategy.primary.type}</span></p>
+                        <p><span className="text-muted-foreground">Tamanho do chunk:</span> <span className="text-foreground">{recommendation.chunking_strategy.parameters.chunk_size}</span></p>
+                        <p><span className="text-muted-foreground">Sobreposição:</span> <span className="text-foreground">{recommendation.chunking_strategy.parameters.chunk_overlap}</span></p>
+                        <p className="mt-2 text-muted-foreground line-clamp-3">{recommendation.retrieval_hint}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Testing Questions Section */}
+                {recommendation.testing_questions && recommendation.testing_questions.length > 0 && (
+                  <div className="rounded-lg border border-secondary bg-secondary/30 p-4 mt-4">
+                    <h3 className="text-sm font-medium text-secondary-foreground mb-3">Questionamentos para Validação</h3>
+                    <ul className="space-y-1.5 text-xs text-foreground">
+                      {recommendation.testing_questions.map((q, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span className="text-muted-foreground">•</span>
+                          <span>{q}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Alerta de revisão necessária */}
                 {recommendation.review_required && (
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 mt-4">
                     <p className="text-sm text-destructive">
                       <strong>Atenção:</strong> Este documento requer revisão manual. 
                       Confirme os parâmetros abaixo antes de prosseguir.
@@ -370,7 +420,7 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
                 )}
 
                 {/* Informações do documento */}
-                <div className="rounded-lg border border-border bg-background/50 p-4">
+                <div className="rounded-lg border border-border bg-background/50 p-4 mt-4">
                   <h3 className="text-sm font-medium text-foreground mb-3">Documento Analisado</h3>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
@@ -389,15 +439,19 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
                       <span className="text-muted-foreground">Domínio:</span>
                       <span className="ml-2 text-foreground">{recommendation.document.domain}</span>
                     </div>
+                    <div>
+                      <span className="text-muted-foreground">Tokens estimados:</span>
+                      <span className="ml-2 text-foreground">{recommendation.document.estimated_tokens?.toLocaleString()}</span>
+                    </div>
                     <div className="col-span-2">
                       <span className="text-muted-foreground">Dica de recuperação:</span>
-                      <span className="ml-2 text-foreground">{recommendation.retrieval_hint}</span>
+                      <p className="ml-2 mt-1 text-foreground text-xs line-clamp-3">{recommendation.retrieval_hint}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Configurações de chunking */}
-                <div className="rounded-lg border border-border bg-background/50 p-4">
+                <div className="rounded-lg border border-border bg-background/50 p-4 mt-4">
                   <h3 className="text-sm font-medium text-foreground mb-3">Estratégia de Chunking</h3>
                   
                   <Field label="Estratégia" htmlFor="chunkingStrategy">
@@ -443,33 +497,35 @@ export function KnowledgeFlowDialog({ open, onClose, token }: KnowledgeFlowDialo
                 </div>
 
                 {flowError && (
-                  <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+                  <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive mt-4">
                     {flowError}
                   </p>
                 )}
 
-                <div className="mt-1 flex items-center justify-end gap-2">
+                <div className="mt-4 flex items-center justify-end gap-2">
                   <button
                     type="button"
                     onClick={onClose}
                     className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    disabled={submitting || isComplete}
+                    disabled={confirmSubmitting}
                   >
-                    Cancelar
+                    {showSuccess ? 'Fechar' : 'Cancelar'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmReview}
-                    disabled={submitting || isComplete}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-                  >
-                    {submitting ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="size-4" />
-                    )}
-                    Confirmar e Indexar
-                  </button>
+                  {!showSuccess && (
+                    <button
+                      type="button"
+                      onClick={handleConfirmReview}
+                      disabled={confirmSubmitting}
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                    >
+                      {confirmSubmitting ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="size-4" />
+                      )}
+                      Confirmar e Indexar
+                    </button>
+                  )}
                 </div>
               </div>
             )}

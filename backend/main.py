@@ -4,6 +4,7 @@ import asyncio
 import uuid
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Form, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import create_engine, text
@@ -19,9 +20,20 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# CORS middleware - permite requisições do frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8081"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 # Configurações via ambiente
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "30"))
+OLLAMA_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "mycrew_agent_kb")
 JWT_SECRET = os.getenv("JWT_SECRET", "mycrew-jwt-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
@@ -484,7 +496,6 @@ async def get_provider_models(provider_slug: str, request: Request):
             if not base_url:
                 base_url = "https://openrouter.ai/api"  # Default for OpenRouter
             
-            # Convert any buffer type to bytes first
             api_key_encrypted = user_config[1]
             if isinstance(api_key_encrypted, (memoryview, bytearray)):
                 api_key_encrypted = bytes(api_key_encrypted)
@@ -899,6 +910,73 @@ async def health():
 # In-memory flow storage for SSE (em produção, usar Redis)
 knowledge_flows: dict[str, KnowledgeFlow] = {}
 
+
+@app.get("/knowledge/status/{flow_id}")
+async def knowledge_status(flow_id: str, request: Request):
+    """Get current flow status and recommendation for reconnection recovery"""
+    user = get_current_user(request)
+    flow = knowledge_flows.get(flow_id)
+    if not flow:
+        # Try to get from database
+        with get_db_connection() as conn:
+            result = conn.execute(text("""
+                SELECT raw_analysis, status FROM knowledge_flow kf
+                JOIN knowledge_document kd ON kd.id = kf.document_id
+                WHERE kf.flow_id = :flow_id AND kf.user_id = :user_id
+            """), {"flow_id": flow_id, "user_id": user["id"]}).fetchone()
+            
+            if result and result[0]:
+                return {
+                    "status": result[1] or "awaiting_confirmation",
+                    "recommendation": result[0]
+                }
+        raise HTTPException(status_code=404, detail="Flow not found")
+    
+    return {
+        "status": "awaiting_confirmation",
+        "recommendation": flow._recommendation
+    }
+
+
+async def _process_flow_background(flow: KnowledgeFlow, user_id: str, name: str, file_type: str):
+    """Processa o documento em background e persiste no banco"""
+    try:
+        recommendation = await flow.process()
+        
+        with get_db_connection() as conn:
+            doc_id = conn.execute(text("""
+                INSERT INTO knowledge_document (user_id, filename, file_type, language, structure_level, domain, raw_analysis)
+                VALUES (:user_id, :filename, :file_type, :language, :structure_level, :domain, :raw_analysis)
+                RETURNING id
+            """), {
+                "user_id": user_id,
+                "filename": name,
+                "file_type": file_type,
+                "language": recommendation.document.language,
+                "structure_level": recommendation.document.structure_level,
+                "domain": recommendation.document.domain,
+                "raw_analysis": json.dumps(recommendation.model_dump())
+            }).scalar()
+            
+            conn.execute(text("""
+                INSERT INTO knowledge_flow (flow_id, document_id, user_id, status)
+                VALUES (:flow_id, :document_id, :user_id, 'awaiting_confirmation')
+            """), {
+                "flow_id": flow.flow_id,
+                "document_id": str(doc_id),
+                "user_id": user_id
+            })
+            conn.commit()
+    except Exception as e:
+        await flow.emit_step('analyze', 'Analisando com Cortex', 'error', error_message=f'Erro no processamento: {str(e)}')
+    finally:
+        # Limpa o flow da memória após 5 minutos (tempo para reconexão SSE)
+        async def cleanup():
+            await asyncio.sleep(300)  # 5 minutos
+            knowledge_flows.pop(flow.flow_id, None)
+        asyncio.create_task(cleanup())
+
+
 @app.post("/knowledge/ingest")
 async def knowledge_ingest(
     request: Request,
@@ -916,45 +994,24 @@ async def knowledge_ingest(
     # Lê conteúdo do arquivo
     file_content = await file.read()
     
-    # Cria flow manager
-    flow = KnowledgeFlow(flow_id, user["id"], file_content, file.filename or "unknown")
+    # Define file_type antes de usar
+    file_type = file.filename.split('.')[-1].lower() if '.' in file.filename else 'other'
+    
+    # Busca o prompt do agente Cortex pelo nome (mais flexível que ID fixo)
+    with get_db_connection() as conn:
+        cortex_agent = conn.execute(text("""
+            SELECT prompt FROM agents WHERE name = 'Cortex' AND user_id = :user_id
+        """), {"user_id": user["id"]}).fetchone()
+        cortex_prompt = cortex_agent[0] if cortex_agent else ""
+    
+    # Cria flow manager com prompt dinâmico
+    flow = KnowledgeFlow(flow_id, user["id"], file_content, file.filename or "unknown", cortex_prompt)
     knowledge_flows[flow_id] = flow
     
-    # Processa em background (SSE precisa ser streaming)
-    # Por enquanto, processa síncrono para devolver recommendation
-    try:
-        recommendation = await flow.analyze_document()
-        
-        # Persiste documento no Postgres (status: pending)
-        with get_db_connection() as conn:
-            doc_id = conn.execute(text("""
-                INSERT INTO knowledge_document (filename, file_type, language, structure_level, domain, raw_analysis)
-                VALUES (:filename, :file_type, :language, :structure_level, :domain, :raw_analysis)
-                RETURNING id
-            """), {
-                "filename": name,
-                "file_type": file.filename.split('.')[-1].lower() if '.' in file.filename else 'other',
-                "language": recommendation.document.language,
-                "structure_level": recommendation.document.structure_level,
-                "domain": recommendation.document.domain,
-                "raw_analysis": json.dumps(recommendation.model_dump())
-            }).scalar()
-            
-            conn.execute(text("""
-                INSERT INTO knowledge_flow (flow_id, document_id, user_id, status)
-                VALUES (:flow_id, :document_id, :user_id, 'awaiting_confirmation')
-            """), {
-                "flow_id": flow_id,
-                "document_id": str(doc_id),
-                "user_id": user["id"]
-            })
-            conn.commit()
-        
-        return {"flow_id": flow_id}
-    except Exception as e:
-        # Emite erro via SSE
-        await flow.emit_step('analyze', 'Analisando com Cortex', 'error', error_message=str(e))
-        raise HTTPException(status_code=500, detail=f"Erro na análise: {str(e)}")
+    # Processa em background para que SSE consiga capturar eventos
+    asyncio.create_task(_process_flow_background(flow, user["id"], name, file_type))
+    
+    return {"flow_id": flow_id}
 
 
 @app.get("/knowledge/stream")
@@ -976,9 +1033,12 @@ async def knowledge_stream(request: Request, flow_id: str):
         
         flow._subscribers.append(subscribe)
         
+        # Reenvia eventos do buffer para este novo subscriber
+        for buffered_event in flow._event_buffer:
+            events_queue.append(buffered_event)
+        
         try:
             while True:
-                # Check if client disconnected
                 if await request.is_disconnected():
                     break
                     
@@ -1005,10 +1065,58 @@ async def knowledge_confirm(
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     
-    # TODO: implementar chunking + embeddings + Qdrant
-    await flow.emit_step('chunking', 'Indexando', 'running', 'Processando chunks...')
-    await asyncio.sleep(1)  # Simulate processing
-    await flow.emit_step('chunking', 'Indexando', 'done', 'Document indexed')
-    await flow.emit_step('done', 'Concluído', 'done', 'Processamento finalizado')
-    
-    return {"message": "Knowledge processing started"}
+    try:
+        chunking_params = payload.get("chunking_strategy", {}).get("parameters")
+        
+        # Get document_id from knowledge_flow
+        with get_db_connection() as conn:
+            doc_result = conn.execute(text("""
+                SELECT document_id FROM knowledge_flow WHERE flow_id = :flow_id AND user_id = :user_id
+            """), {"flow_id": flow_id, "user_id": user["id"]}).fetchone()
+            
+            if doc_result:
+                document_id = doc_result[0]
+            else:
+                document_id = str(uuid.uuid4())
+        
+        await flow.continue_after_confirmation(chunking_params)
+        
+        # Persist chunks to database
+        if flow._content and flow._recommendation:
+            chunks = flow._chunks if hasattr(flow, '_chunks') else []
+            if chunks:
+                with get_db_connection() as conn:
+                    for i, chunk in enumerate(chunks):
+                        conn.execute(text("""
+                            INSERT INTO knowledge_chunk (document_id, content, chunk_index, token_count, strategy_used, embedding_model, qdrant_collection)
+                            VALUES (:document_id, :content, :chunk_index, :token_count, :strategy_used, :embedding_model, :qdrant_collection)
+                        """), {
+                            "document_id": document_id,
+                            "content": chunk,
+                            "chunk_index": i,
+                            "token_count": len(chunk) // 4,
+                            "strategy_used": flow._recommendation.get('chunking_strategy', {}).get('primary', {}).get('type', 'paragraph'),
+                            "embedding_model": flow._recommendation.get('embedding', {}).get('model', OLLAMA_EMBEDDING_MODEL),
+                            "qdrant_collection": QDRANT_COLLECTION
+                        })
+                    conn.commit()
+            
+            # Update knowledge_flow status
+            with get_db_connection() as conn:
+                conn.execute(text("""
+                    UPDATE knowledge_flow SET status = 'done', updated_at = now()
+                    WHERE flow_id = :flow_id
+                """), {"flow_id": flow_id})
+                conn.commit()
+        
+        return {"message": "Knowledge processing completed", "status": "completed"}
+    except Exception as e:
+        await flow.emit_step('chunking', 'Indexando', 'error', error_message=str(e))
+        # Update knowledge_flow status on error
+        with get_db_connection() as conn:
+            conn.execute(text("""
+                UPDATE knowledge_flow SET status = 'error', updated_at = now()
+                WHERE flow_id = :flow_id
+            """), {"flow_id": flow_id})
+            conn.commit()
+        raise HTTPException(status_code=500, detail=f"Erro no processamento: {str(e)}")

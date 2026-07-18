@@ -10,6 +10,42 @@ interface KnowledgeStepsDiagramProps {
   operation: 'ingest' | 'query' | 'quality_report'
 }
 
+// Descrições das etapas com detalhes dinâmicos
+const STEP_DESCRIPTIONS: Record<string, string> = {
+  extract_metadata: 'Recebendo documento e extraindo metadados',
+  collecting_samples: 'Coletando amostras do início, meio e fim do conteúdo',
+  analyze: 'Enviando conteúdo para Cortex analisar',
+  validate_schema: 'Validando estrutura e integridade da resposta',
+  awaiting_confirmation: 'Aguardando revisão e confirmação',
+  chunking: 'Dividindo documento em chunks',
+  embedding: 'Gerando embeddings vetoriais',
+  done: 'Processo concluído'
+}
+
+// Função para gerar detalhes específicos do step
+function getStepDetails(step: KnowledgeFlowStep): string {
+  switch (step.step_id) {
+    case 'extract_metadata':
+      return step.output_preview || 'Preparando documento...'
+    case 'collecting_samples':
+      return step.output_preview || 'Analisando conteúdo...'
+    case 'analyze':
+      return 'Processando com Cortex (Qwen2.5)'
+    case 'validate_schema':
+      return step.output_preview || 'Validação concluída'
+    case 'awaiting_confirmation':
+      return step.output_preview || 'Pronto para revisão'
+    case 'chunking':
+      return step.output_preview || 'Processando chunks...'
+    case 'embedding':
+      return step.output_preview || 'Gerando vetores...'
+    case 'done':
+      return step.output_preview || 'Concluído com sucesso!'
+    default:
+      return ''
+  }
+}
+
 /**
  * Diagrama animado de etapas do Knowledge Flow
  * Estilo "prompt chaining" com nós conectados visualmente
@@ -75,8 +111,11 @@ function StepNode({ step, index, isActive, hasAnimatedConnector }: StepNodeProps
     }
   }
 
+  // Extrai métricas do recommendation (se houver)
+  const ollamaMetrics = step.recommendation?.ollama_metrics as { total_ms?: number; tokens_generated?: number; throughput_tps?: number } | undefined
+
   return (
-    <div className="relative flex flex-col items-center" style={{ zIndex: 10 }}>
+    <div className="group relative flex flex-col items-center" style={{ zIndex: 10 }}>
       {/* Círculo do nó */}
       <div
         className={cn(
@@ -93,10 +132,10 @@ function StepNode({ step, index, isActive, hasAnimatedConnector }: StepNodeProps
       </div>
 
       {/* Texto do step */}
-      <div className="mt-2 max-w-[80px] text-center">
+      <div className="mt-2 max-w-[100px] text-center">
         <p
           className={cn(
-            'text-[10px] font-medium leading-tight',
+            'text-xs font-medium leading-tight',
             step.status === 'done' && 'text-success',
             step.status === 'running' && 'text-primary',
             step.status === 'error' && 'text-destructive',
@@ -105,7 +144,29 @@ function StepNode({ step, index, isActive, hasAnimatedConnector }: StepNodeProps
         >
           {step.step_name}
         </p>
+        
+        {/* Métricas de duração */}
+        {step.duration_formatted && (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {step.duration_formatted}
+          </p>
+        )}
       </div>
+
+       {/* Tooltip com descrição e métricas */}
+       <div className="absolute bottom-full mb-2 hidden w-64 rounded-md bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg group-hover:block pointer-events-none">
+         <p className="font-medium mb-1">{step.step_name}</p>
+         <p className="mt-0.5 text-muted-foreground text-xs">{STEP_DESCRIPTIONS[step.step_id] || 'Passo do processo'}</p>
+         {/* Detalhes específicos do step */}
+         <p className="mt-1 text-foreground text-xs line-clamp-2">{getStepDetails(step)}</p>
+         {ollamaMetrics && step.status === 'done' && (
+           <div className="mt-1.5 border-t border-border pt-1">
+             <p className="text-[9px]"><span className="text-muted-foreground">Tokens:</span> {ollamaMetrics.tokens_generated}</p>
+             <p className="text-[9px]"><span className="text-muted-foreground">Throughput:</span> {ollamaMetrics.throughput_tps} t/s</p>
+             <p className="text-[9px]"><span className="text-muted-foreground">Tempo:</span> {ollamaMetrics.total_ms}ms</p>
+           </div>
+         )}
+       </div>
 
       {/* Linha animada entre nós */}
       {hasAnimatedConnector && (

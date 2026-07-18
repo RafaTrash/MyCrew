@@ -101,7 +101,7 @@ class HnswConfig(BaseModel):
 class QdrantIndexConfig(BaseModel):
     distance: Distance
     hnsw_config: HnswConfig
-    payload_index_fields: list[str]
+    payload_index_fields: list[str] = Field(default_factory=lambda: [])
 
 class IngestRecommendation(BaseModel):
     operation: Literal['ingest'] = 'ingest'
@@ -110,6 +110,7 @@ class IngestRecommendation(BaseModel):
     embedding: EmbeddingConfig
     qdrant_index: QdrantIndexConfig
     retrieval_hint: str
+    testing_questions: Optional[list[str]] = Field(default=None, description="Questionamentos básicos para validação na próxima fase")
     review_required: bool
     confidence: float = Field(ge=0.0, le=1.0)
 
@@ -149,3 +150,4 @@ class KnowledgeFlowEvent(BaseModel):
     output_preview: Optional[str] = None
     error_message: Optional[str] = None
     timestamp: str
+    recommendation: Optional[IngestRecommendation | QualityReport] = None
