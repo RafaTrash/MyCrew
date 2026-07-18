@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { Agent, Provider } from '@/lib/types'
 import { AddAgentDialog } from './add-agent-dialog'
 import { useAuth } from '@/lib/auth-context'
+import { CortexAvatar } from './Avatar'
 
 interface AgentsResponse {
   agents: Agent[]
@@ -141,52 +142,8 @@ function AgentCard({ agent }: { agent: Agent }) {
     return (
       <div className="flex flex-col rounded-xl border border-border bg-card p-4">
         <div className="flex items-start gap-3">
-          <div
-            className="relative size-12 shrink-0"
-            aria-hidden="true"
-          >
-            {/* Outer rotating ring - Cyan/Blue glow */}
-            <svg
-              className="cortex-outer-ring absolute inset-0 size-full"
-              viewBox="0 0 48 48"
-            >
-              <circle
-                cx="24"
-                cy="24"
-                r="22"
-                fill="none"
-                stroke="oklch(0.75 0.16 165 / 0.4)"
-                strokeWidth="1.5"
-                strokeDasharray="3 2"
-              />
-            </svg>
-            
-            {/* Inner rotating ring - Brighter blue */}
-            <svg
-              className="cortex-inner-ring absolute inset-0 size-full"
-              viewBox="0 0 48 48"
-            >
-              <circle
-                cx="24"
-                cy="24"
-                r="16"
-                fill="none"
-                stroke="oklch(0.75 0.16 165 / 0.6)"
-                strokeWidth="1.5"
-                strokeDasharray="2 2"
-              />
-            </svg>
-            
-            {/* Core avatar with pulse animation */}
-            <div className="cortex-avatar-core absolute inset-1 rounded-xl overflow-hidden">
-              {/* eslint-disable-next-line @next/no-img-element */}
-              <img
-                src={agent.avatarUrl || '/cortex/cortex.png'}
-                alt=""
-                className="size-full object-cover"
-              />
-            </div>
-          </div>
+           <CortexAvatar status="idle" size={64} />
+          
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-foreground">
