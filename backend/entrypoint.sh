@@ -298,6 +298,7 @@ CREATE TRIGGER trg_agents_updated_at
 
 -- Knowledge tables for Cortex
 CREATE TABLE IF NOT EXISTS knowledge_document (
+    tags            JSONB DEFAULT '[]'::jsonb,
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         TEXT NOT NULL,
     filename        TEXT NOT NULL,
@@ -339,6 +340,16 @@ CREATE TABLE IF NOT EXISTS knowledge_query_log (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- MIGRATION: Add tags column to existing knowledge_document tables
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'knowledge_document' AND column_name = 'tags'
+  ) THEN
+    ALTER TABLE knowledge_document ADD COLUMN tags JSONB DEFAULT '[]'::jsonb;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS knowledge_flow (
     flow_id     UUID PRIMARY KEY,
     document_id UUID REFERENCES knowledge_document(id) ON DELETE CASCADE,
@@ -350,6 +361,8 @@ CREATE TABLE IF NOT EXISTS knowledge_flow (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_document_user_id ON knowledge_document(user_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_document_status ON knowledge_document(status);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_tags ON knowledge_document USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_document_id ON knowledge_chunk(document_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_flow_user_id ON knowledge_flow(user_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_flow_status ON knowledge_flow(status);

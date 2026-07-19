@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import type { KnowledgeFlowStep } from '@/lib/knowledge-types'
+import type { KnowledgeFlowStep, ExtractionMetrics } from '@/lib/knowledge-types'
 import { Check, XCircle, Loader2 } from 'lucide-react'
 
 interface KnowledgeStepsDiagramProps {
@@ -12,7 +12,7 @@ interface KnowledgeStepsDiagramProps {
 
 // Descrições das etapas com detalhes dinâmicos
 const STEP_DESCRIPTIONS: Record<string, string> = {
-  extract_metadata: 'Recebendo documento e extraindo metadados',
+  extract_metadata: 'Recebendo documento e extraindo metadados via magic bytes',
   collecting_samples: 'Coletando amostras do início, meio e fim do conteúdo',
   analyze: 'Enviando conteúdo para Cortex analisar',
   validate_schema: 'Validando estrutura e integridade da resposta',
@@ -113,6 +113,9 @@ function StepNode({ step, index, isActive, hasAnimatedConnector }: StepNodeProps
 
   // Extrai métricas do recommendation (se houver)
   const ollamaMetrics = step.recommendation?.ollama_metrics as { total_ms?: number; tokens_generated?: number; throughput_tps?: number } | undefined
+  
+  // Extrai métricas de extração
+  const extractionMetrics = step.recommendation?.extraction_metrics as ExtractionMetrics | undefined
 
   return (
     <div className="group relative flex flex-col items-center" style={{ zIndex: 10 }}>
@@ -164,6 +167,24 @@ function StepNode({ step, index, isActive, hasAnimatedConnector }: StepNodeProps
              <p className="text-[9px]"><span className="text-muted-foreground">Tokens:</span> {ollamaMetrics.tokens_generated}</p>
              <p className="text-[9px]"><span className="text-muted-foreground">Throughput:</span> {ollamaMetrics.throughput_tps} t/s</p>
              <p className="text-[9px]"><span className="text-muted-foreground">Tempo:</span> {ollamaMetrics.total_ms}ms</p>
+           </div>
+         )}
+         {/* Métricas de extração para o step extract_metadata */}
+         {extractionMetrics && step.step_id === 'extract_metadata' && (
+           <div className="mt-1.5 border-t border-border pt-1 max-h-32 overflow-y-auto">
+             <p className="text-[9px]"><span className="text-muted-foreground">Tipo:</span> {extractionMetrics.file_type.toUpperCase()}</p>
+             <p className="text-[9px]"><span className="text-muted-foreground">Idioma:</span> {extractionMetrics.language}</p>
+             <p className="text-[9px]"><span className="text-muted-foreground">Estrutura:</span> {extractionMetrics.structure.structure_level}</p>
+             {extractionMetrics.structure.headings && (
+               <p className="text-[9px]"><span className="text-muted-foreground">Headings:</span> H1={extractionMetrics.structure.headings.h1}, H2={extractionMetrics.structure.headings.h2}</p>
+             )}
+             {extractionMetrics.structure.has_tables && (
+               <p className="text-[9px]"><span className="text-muted-foreground">Tabelas:</span> detectadas</p>
+             )}
+             {extractionMetrics.structure.has_code && (
+               <p className="text-[9px]"><span className="text-muted-foreground">Código:</span> presente</p>
+             )}
+             <p className="text-[9px]"><span className="text-muted-foreground">Tempo extracao:</span> {extractionMetrics.extraction_time_ms}ms</p>
            </div>
          )}
        </div>

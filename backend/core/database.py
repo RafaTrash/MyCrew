@@ -12,16 +12,44 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "mycrew")
 DATABASE_URL = os.getenv("DATABASE_URL", f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
 
-# Create engine
-engine = create_engine(DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://"), echo=False)
+# Create engine with proper configuration
+engine = create_engine(
+    DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://"),
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300
+)
+
+
+class ConnectionContext:
+    """Context manager for database connections with automatic transaction handling."""
+    def __init__(self):
+        self.connection = None
+        self.transaction = None
+    
+    def __enter__(self):
+        self.connection = engine.connect()
+        self.transaction = self.connection.begin()
+        return self.connection
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.transaction:
+            if exc_type is not None:
+                self.transaction.rollback()
+            else:
+                self.transaction.commit()
+        if self.connection:
+            self.connection.close()
+        return False
 
 
 def get_db_connection():
-    """Get a database connection."""
-    return engine.connect()
+    """Get a database connection with automatic transaction management."""
+    return ConnectionContext()
 
 
 def execute_query(query: str, params: dict = None):
     """Execute a SQL query with optional parameters."""
-    with get_db_connection() as conn:
-        return conn.execute(text(query), params or {}).fetchone()
+    with engine.connect() as conn:
+        result = conn.execute(text(query), params or {})
+        return result.fetchone()
